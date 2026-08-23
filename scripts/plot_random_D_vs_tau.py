@@ -58,8 +58,11 @@ def main():
 
     fig, ax = plt.subplots(figsize=(8.0, 6.0), constrained_layout=True)
 
-    # collision-limited asymptote: the walk is just r_c hops, the drift is idle
-    x = np.geomspace(tau.min() * 0.6, tau.max() * 1.6, 60)
+    # collision-limited asymptote: the walk is just r_c hops, the drift is idle.
+    # Drawn only where it is within reach of the data, so the plot is not
+    # stretched over the decades where it has long since been left behind.
+    x = np.geomspace(tau.min() * 0.6,
+                     min(tau.max() * 1.6, 30.0 * r_c ** 2 / Dn.min()), 60)
     ax.plot(x, theory.D_collision(x, r_c), ls="--", lw=1.4, color="0.35",
             zorder=1, label=r"$D = r_c^2/2\tau$   (free walk, slope $-1$)")
 
@@ -92,7 +95,8 @@ def main():
                     zorder=4,
                     label=r"$|d\ln\,\mathrm{MSD}/d\ln t - 1| > 0.1$")
 
-    ax.set(xscale="log", yscale="log", xlabel=r"$\tau/T_0$",
+    ax.set(xscale="log", yscale="log", ylim=(0.4 * Dn.min(), 3.0 * Dn.max()),
+           xlabel=r"$\tau/T_0$",
            ylabel=r"$D$   (notes' convention, $\langle\Delta r^2\rangle = 2Dt$)")
     ax.set_title("Gaussian random potential: diffusion coefficient vs. mean "
                  "free time\n"
