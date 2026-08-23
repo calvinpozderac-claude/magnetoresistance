@@ -93,6 +93,10 @@ def main():
                    help="RK4 time step.  On the random field the potential "
                         "leaks across contours once the step exceeds ~0.25 "
                         "xi0/v_rms; 0.125 was checked against 0.0625.")
+    p.add_argument("--fixed-time", type=float, default=None,
+                   help="run every tau for this same total simulated time, so "
+                        "that D is measured over one common lag window and the "
+                        "shape of D(tau) carries no scale-dependent bias")
     p.add_argument("--min-steps", type=int, default=2000)
     p.add_argument("--min-walkers", type=int, default=256)
     p.add_argument("--max-walkers", type=int, default=8192)
@@ -121,15 +125,20 @@ def main():
           f"{'D(std)':>11} {'err':>9} {'slope':>6} {'s':>6}")
     t_all = time.time()
     for k, tau in enumerate(taus):
-        n_steps, n_walkers = sizing(tau, args.rc, args.xi, t0,
-                                    target_cells=args.target_cells,
-                                    max_steps=args.max_steps,
-                                    work_budget=args.work_budget,
-                                    min_steps=args.min_steps,
-                                    min_walkers=args.min_walkers,
-                                    max_walkers=args.max_walkers,
-                                    D_scale=getattr(args, "D_scale"),
-                                    potential=args.potential)
+        if args.fixed_time is not None:
+            n_steps = int(np.clip(args.fixed_time / tau, args.min_steps,
+                                  args.max_steps))
+            n_walkers = args.max_walkers
+        else:
+            n_steps, n_walkers = sizing(tau, args.rc, args.xi, t0,
+                                        target_cells=args.target_cells,
+                                        max_steps=args.max_steps,
+                                        work_budget=args.work_budget,
+                                        min_steps=args.min_steps,
+                                        min_walkers=args.min_walkers,
+                                        max_walkers=args.max_walkers,
+                                        D_scale=getattr(args, "D_scale"),
+                                        potential=args.potential)
         n_walkers = max(n_walkers // args.n_real, 64) if args.n_real > 1 else n_walkers
         # RK4 substeps: keep each substep's arc well below the curvature scale
         n_sub = int(np.clip(np.ceil(tau / args.substep_time), 4,
@@ -159,7 +168,8 @@ def main():
              xi=args.xi, Gamma=args.Gamma, B=args.B, T0=t0,
              potential=args.potential, collisions=args.collisions,
              n_steps=n_steps_a, n_walkers=n_walk_a,
-             n_modes=args.n_modes, n_real=args.n_real)
+             n_modes=args.n_modes, n_real=args.n_real,
+             fixed_time=(args.fixed_time if args.fixed_time else 0.0))
     print("wrote", out)
 
 
