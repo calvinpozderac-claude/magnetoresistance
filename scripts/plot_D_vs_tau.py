@@ -30,6 +30,8 @@ def load(path):
     return dict(tau=d["tau"], D=d["D"], D_err=d["D_err"], r_c=float(d["r_c"]),
                 xi=float(d["xi"]), T0=float(d["T0"]), ll=d["loglog_slope"],
                 potential=str(d["potential"]), collisions=str(d["collisions"]),
+                fixed_time=(float(d["fixed_time"]) if "fixed_time" in d.files
+                            else 0.0),
                 path=path)
 
 
@@ -65,8 +67,13 @@ def main():
         u = r["tau"] / r["T0"]
         Dn = theory.to_note(r["D"])
         err = theory.to_note(r["D_err"])
-        suffix = "" if r["collisions"] == "poisson" else r", fixed $\tau$"
-        lbl = "{}, $r_c/\\xi={:g}${}".format(r["potential"], r["r_c"], suffix)
+        bits = []
+        if r["collisions"] != "poisson":
+            bits.append(r"fixed $\tau$")
+        bits.append("common $T$" if r["fixed_time"] else "matched MSD")
+        sym = r"\xi_0" if r["potential"] == "random" else r"\xi"
+        lbl = "{}, $r_c/{}={:g}$ ({})".format(r["potential"], sym, r["r_c"],
+                                              ", ".join(bits))
         ax.errorbar(u, Dn, yerr=err, fmt="o", ms=4.5, lw=1.1, capsize=2,
                     color=col, mfc="white", mew=1.3, zorder=3, label=lbl)
 

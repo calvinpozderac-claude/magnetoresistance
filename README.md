@@ -59,6 +59,7 @@ after every substep, which conserves `V` to round-off; `Sinusoid` exercises it.
 
 ```
 mrdiff/potentials.py   landscapes + contour propagators (exact and generic)
+mrdiff/theory.py       the project notes' analytic regimes, and conventions
 mrdiff/walk.py         drift–kick walk, MSD, extraction of D
 scripts/run_pyramid.py     sweep r_c at fixed B, write data/*.npz
 scripts/plot_D_vs_rc.py    log-log plot of D(r_c)
@@ -77,6 +78,14 @@ python scripts/run_pyramid.py --rc-min 0.0125 --rc-max 0.0225 --n-rc 3 \
     --out data/D_vs_rc_pyramid_small.npz
 python scripts/plot_D_vs_rc.py           # figures/D_vs_rc_pyramid.png
 python scripts/plot_illustration.py      # figures/pyramid_illustration.png
+
+# D(tau): the notes' comparison, and the random potential
+python scripts/run_tau_sweep.py --potential pyramid --rc 0.1 --collisions poisson
+python scripts/run_tau_sweep.py --potential random --rc 0.1 --tau-min 0.3 \
+    --tau-max 30 --n-tau 9 --n-real 5 --fixed-time 8000 --min-steps 200 \
+    --min-walkers 800 --max-walkers 800
+python scripts/plot_D_vs_tau.py --data data/D_vs_tau_*.npz --ratio --fit-power
+python scripts/plot_random_illustration.py
 python -m pytest tests -q
 ```
 
@@ -126,6 +135,70 @@ Two corrections to the notes came out of this:
    Multiplying by `2/pi` maps it onto `4 xi r_c/(pi tau)` -- and it is regime 3
    that the simulation agrees with, so the correction belongs to eq. (7), not to
    the regime-3 result. Eq. (7) is good to ~5% in the crossover region itself.
+
+## The same analysis on a random potential
+
+The random landscape is a sum of sine waves whose wavelength weights are
+Gaussian:
+
+```
+V(r) = Gamma sqrt(2/N) sum_j cos(k_j . r + phi_j)
+```
+
+with uniformly random directions and phases and `|k|` drawn from
+`p(k) = k xi0^2 exp(-k^2 xi0^2/2)`. That spectrum makes the correlation function
+exactly Gaussian, `<V(0) V(r)> = Gamma^2 exp(-r^2/2 xi0^2)`, so the correlation
+length **is** `xi0`, set to 1 (checked against the exact form). The field is
+homogeneous, isotropic and *not* periodic, so there is no artificial lattice.
+Contours are followed with the generic RK4 + projection propagator, and `Gamma`
+is scaled so that `rms|grad V| = Gamma_pyr/xi`, i.e. both landscapes have the
+same drift speed and the same `T0 = xi0/v_d = 1`.
+
+![random illustration](figures/random_illustration.png)
+
+The right panel is the essential difference from the pyramid: pyramid contours
+are closed squares trapped inside one cell, but a random landscape has contours
+of *every* size, diverging at the percolating level `V = 0`, and a walker that
+lands near that level rides a single contour for tens of `xi0`.
+
+![D vs tau, random](figures/D_vs_tau_random.png)
+
+**`D(tau)` is far shallower than on the pyramid.** Over `tau/T0 = 0.03 ... 30`
+at `r_c/xi0 = 0.1`:
+
+| landscape | measured exponent in `D ~ tau^-alpha` |
+|---|---|
+| random, `tau/T0 = 0.3 - 30` | **0.21 +- 0.01** |
+| random, whole range | 0.23 +- 0.01 |
+| pyramid, `tau/T0 = 0.3 - 30` | 0.80 +- 0.04 |
+| pyramid, `tau/T0 > 2` (notes' regime 3) | 0.98 +- 0.02 |
+
+so the ratio `D_random/D_pyramid` grows from about 3 at `tau ~ T0/3` to **50** at
+`tau = 30 T0`. The notes' regime-3 picture -- only walkers within `r_c` of a cell
+edge can move on, and they move exactly one cell -- has no analogue here: there
+is no cell to escape, and a rarer collision simply means the walker rides its
+contour further, which nearly cancels the explicit `1/tau`.
+
+Two numerical points that mattered:
+
+* **Observation time.** The random landscape keeps a sub-diffusive tail far
+  longer than the pyramid (`d ln MSD/d ln t` is still 0.94 after ~10^4 collision
+  times, where the pyramid is at 1.00 immediately), so a D measured over a
+  short window is not the same as one measured over a long window. The sweep was
+  therefore repeated with `--fixed-time`, every `tau` run for the *same* total
+  time so that D comes from one common lag window. The two protocols agree to
+  within 5% at every matched `tau`, so the exponent is not an artefact of it.
+* **RK4 step size.** The projection cannot hold a walker on its contour once the
+  time step exceeds ~`0.25 xi0/v_rms`: at `h = 1` the level drifts by up to 0.19
+  and D is inflated 2x. At `h = 0.25` and `h = 0.125`, V is conserved to 5e-7 and
+  5e-13 and D agrees within errors, so the sweeps use `h = 0.125`.
+  `n_modes` (32/64/128) and disorder realisation both shift D by less than the
+  +-20% realisation scatter, which is why each point averages 5 independent
+  fields.
+
+Not attempted here: a percolation-scaling (Isichenko-style) prediction for that
+exponent. The measurement is what it is; the notes' own section-6 derivation is
+excluded from `mrdiff/theory.py` on the grounds that its argument is unsound.
 
 ## Modelling choices worth knowing about
 

@@ -85,3 +85,49 @@ def test_no_net_drift():
     # the mean of n displacements of typical size `spread` is itself ~
     # spread/sqrt(n); allow 4 sigma
     assert np.hypot(x.mean() - 1.0, y.mean() - 1.0) < 4 * spread / np.sqrt(n)
+
+
+def test_random_field_statistics():
+    """The mode sum really is a Gaussian field of correlation length xi0."""
+    from mrdiff import GaussianRandomField
+    rng = np.random.default_rng(0)
+    x, y = rng.uniform(-60, 60, (2, 8000))
+    rs = np.array([0.5, 1.0, 2.0])
+    acc, var, grad2 = [], [], []
+    for s in range(10):
+        f = GaussianRandomField(xi0=1.0, Gamma=1.0, n_modes=128, seed=s)
+        v = f.value(x, y)
+        acc.append([np.mean(v * f.value(x + r, y)) for r in rs])
+        var.append(np.mean(v ** 2))
+        gx, gy = f.grad(x, y)
+        grad2.append(np.mean(gx ** 2 + gy ** 2))
+    # <V^2> = Gamma^2, <|grad V|^2> = 2 Gamma^2 / xi0^2
+    assert np.mean(var) == pytest.approx(1.0, rel=0.05)
+    assert np.mean(grad2) == pytest.approx(2.0, rel=0.05)
+    # <V(0)V(r)> = exp(-r^2 / 2 xi0^2)
+    assert np.allclose(np.mean(acc, axis=0), np.exp(-rs ** 2 / 2), atol=0.03)
+
+
+def test_random_field_contour_is_conserved():
+    """RK4 + projection keeps a walker on its contour at the step size used."""
+    from mrdiff import GaussianRandomField
+    f = GaussianRandomField(xi0=1.0, Gamma=1 / np.sqrt(2), n_modes=64, seed=3)
+    rng = np.random.default_rng(1)
+    x, y = rng.uniform(-15, 15, (2, 400))
+    v0 = f.value(x, y)
+    for _ in range(5):                    # tau = 2 at h = 0.125
+        x, y = f.propagate(x, y, 2.0, n_sub=16)
+    dv = np.abs(f.value(x, y) - v0)
+    # the level must stay negligible against the potential scale (Gamma = 0.71);
+    # a coarser step (h = 1) instead lets it drift by ~0.2, which doubles D
+    assert np.max(dv) < 1e-6
+    assert np.median(dv) < 1e-10
+
+
+def test_poisson_collisions_match_free_walk():
+    """Exponential drift times must not change the potential-free limit."""
+    flat = Sinusoid(V0=0.0)
+    r_c, tau = 0.3, 0.7
+    res = simulate(flat, r_c=r_c, tau=tau, n_steps=400, n_walkers=4000, seed=5,
+                   collisions="poisson")
+    assert res.D == pytest.approx(r_c ** 2 / (4 * tau), rel=0.05)
