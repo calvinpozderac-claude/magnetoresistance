@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# console output of runs; the .npz files are the record
+data/*.log
