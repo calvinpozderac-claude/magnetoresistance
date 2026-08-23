@@ -170,7 +170,7 @@ def _fit_D(lags, msd, fit_lags):
 
 
 def trajectory(potential, r_c, tau, n_steps, B=1.0, seed=0, start=None,
-               n_samples_per_arc=32):
+               n_samples_per_arc=32, n_sub=None, collisions="fixed"):
     """A single walker's path: the list of contour arcs it drifts along.
 
     Each arc is sampled by propagating the *same* starting point for a range of
@@ -183,11 +183,13 @@ def trajectory(potential, r_c, tau, n_steps, B=1.0, seed=0, start=None,
         start = rng.random(2) * 2.0 * getattr(potential, "a", 1.0)
     x = np.array([float(start[0])])
     y = np.array([float(start[1])])
-    ts = np.linspace(0.0, tau, n_samples_per_arc)
     arcs = []
     for _ in range(n_steps):
+        dt = rng.exponential(tau) if collisions == "poisson" else tau
+        ts = np.linspace(0.0, dt, n_samples_per_arc)
         xs, ys = potential.propagate(np.full(n_samples_per_arc, x[0]),
-                                     np.full(n_samples_per_arc, y[0]), ts, B=B)
+                                     np.full(n_samples_per_arc, y[0]), ts, B=B,
+                                     n_sub=n_sub)
         arcs.append(np.stack([xs, ys]))
         x, y = xs[-1:].copy(), ys[-1:].copy()
         theta = rng.random() * 2.0 * np.pi

@@ -83,6 +83,50 @@ python -m pytest tests -q
 Units: `a = V₀ = B = τ = 1`, so lengths are in units of the pyramid size `a`,
 `D` in units of `a²/τ`, and the drift speed is `2V₀/(aB) = 2`.
 
+## Comparison with the project notes
+
+`mrdiff/theory.py` encodes the analytic regimes of the notes (sections 1-5; the
+Isichenko re-derivation of section 6 is deliberately left out). Two conventions
+have to be lined up first:
+
+* **Geometry.** In the notes `xi` is the pyramid *half*-width: cells are
+  `2xi x 2xi`, adjacent apexes are `2xi` apart, `|grad V| = Gamma/xi`. In this
+  code that is `SquarePyramid(V0=Gamma, a=2*xi)`.
+* **Convention.** The notes define D through `<|dr|^2> = 2 D t`, i.e. their D is
+  `Dxx + Dyy`. Everywhere else here D is the standard 2-D `<|dr|^2> = 4 D t`.
+  So `D_notes = 2 D_here`.
+
+![D vs tau, pyramid](figures/D_vs_tau_pyramid.png)
+
+**The three-regime table of the notes is confirmed.** Sweeping `tau` over six
+decades at `r_c/xi = 0.1` and `0.01` (`xi = Gamma = B = 1`, so `v_d = 1` and
+`T0 = xi/v_d = 1`), simulation/theory is:
+
+| regime | notes | sim / notes |
+|---|---|---|
+| 1, `tau/T0 < pi r_c^2/16 xi^2` | `D = r_c^2/2 tau` | 0.99 - 1.03 |
+| 2, up to `tau/T0 = 4/pi` | `D = 2 xi r_c/sqrt(pi T0 tau)` | 0.80 - 0.97 |
+| 3, `tau/T0 > 4/pi` | `D = 4 xi r_c/(pi tau)` | 0.98 - 1.00 |
+
+Regimes 1 and 3 come out to ~1%; the measured local log-log slopes are -1.0,
+-1/2 and -1.0 as predicted, and the crossovers sit where the notes put them
+(they move as `r_c^2`, which the two `r_c` curves confirm).
+
+Two corrections to the notes came out of this:
+
+1. **Collisions must be Poissonian.** The notes say the electron collides "on
+   average after `tau`". Drifting for *exactly* `tau` is a different model: on a
+   closed contour it is a rigid rotation repeated every step, which is not
+   ergodic on the orbit, and it leaves visible commensurability artefacts once
+   `tau > T0` (green points in the figure -- up to 1.5x off, and not monotonic).
+   With exponential drift times of mean `tau`, regime 3 is reproduced to better
+   than 1%. `simulate(..., collisions="poisson")` does this.
+2. **Eq. (7) is wrong at large `tau`, and the `2/pi` in fig. 3 is exactly why.**
+   Its own `tau >> T0` limit is `2 xi r_c/tau`, which is `pi/2` above regime 3.
+   Multiplying by `2/pi` maps it onto `4 xi r_c/(pi tau)` -- and it is regime 3
+   that the simulation agrees with, so the correction belongs to eq. (7), not to
+   the regime-3 result. Eq. (7) is good to ~5% in the crossover region itself.
+
 ## Modelling choices worth knowing about
 
 * **The hop.** As specified, a collision moves the guiding centre by exactly
