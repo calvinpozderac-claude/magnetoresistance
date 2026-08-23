@@ -43,7 +43,7 @@ class WalkResult:
 
 def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
              n_snapshots=128, fit_lags=(0.05, 0.5), n_batches=8, box=None,
-             n_msd_points=140):
+             n_msd_points=140, n_sub=None, collisions="fixed"):
     """Run the drift--kick walk and extract D.
 
     Parameters
@@ -77,6 +77,18 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
     n_batches : int
         Walkers are split into this many batches; the scatter of the per-batch
         diffusion coefficients gives the error bar.
+    collisions : {"fixed", "poisson"}
+        ``"fixed"`` drifts for exactly ``tau`` between kicks.  ``"poisson"``
+        draws each drift time from an exponential distribution of mean ``tau``,
+        i.e. a Poisson collision process at rate 1/tau -- the notes' "collide on
+        average after tau".  The two differ once tau approaches the orbital
+        period: with a fixed time the walker performs a rigid rotation of its
+        closed contour every step, which is not ergodic on the contour.  Times
+        are still counted as ``n_steps * tau``, which is exact in the diffusive
+        regime because the MSD is linear in t and <sum of drift times> = n tau.
+    n_sub : int or None
+        RK4 substeps per drift, for potentials that integrate their contours
+        numerically.  Ignored by potentials with an analytic propagator.
     box : float or None
         Walkers are seeded uniformly in ``[0, box)^2``.  Defaults to one lattice
         period of the potential (2a), which is the stationary distribution: the
@@ -100,8 +112,12 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
     msd = np.empty(msd_steps.size)
     next_msd = 0
 
+    if collisions not in ("fixed", "poisson"):
+        raise ValueError(collisions)
+
     for step in range(1, n_steps + 1):
-        x, y = potential.propagate(x, y, tau, B=B)
+        dt = rng.exponential(tau, n_walkers) if collisions == "poisson" else tau
+        x, y = potential.propagate(x, y, dt, B=B, n_sub=n_sub)
         theta = rng.random(n_walkers) * (2.0 * np.pi)
         x = x + r_c * np.cos(theta)
         y = y + r_c * np.sin(theta)

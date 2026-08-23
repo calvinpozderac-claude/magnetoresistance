@@ -1,7 +1,9 @@
 """Diffusion of guiding centres on equipotential contours in a magnetic field."""
 
-from .potentials import Potential, SquarePyramid, Sinusoid
+from . import theory
+from .potentials import (GaussianRandomField, Potential, Sinusoid,
+                         SquarePyramid)
 from .walk import simulate, trajectory, WalkResult
 
-__all__ = ["Potential", "SquarePyramid", "Sinusoid", "simulate", "trajectory",
-           "WalkResult"]
+__all__ = ["Potential", "SquarePyramid", "Sinusoid", "GaussianRandomField",
+           "simulate", "trajectory", "WalkResult", "theory"]

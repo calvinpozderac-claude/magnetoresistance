@@ -33,7 +33,13 @@ class Potential:
         gx, gy = self.grad(x, y)
         return -gy / B, gx / B
 
-    def propagate(self, x, y, tau, B=1.0, n_sub=64):
+    def value_grad(self, x, y):
+        """Return (V, dV/dx, dV/dy).  Subclasses that share work between the
+        value and the gradient should override this."""
+        gx, gy = self.grad(x, y)
+        return self.value(x, y), gx, gy
+
+    def propagate(self, x, y, tau, B=1.0, n_sub=None):
         """Advance guiding centres along their contours for a time ``tau``.
 
         Generic RK4 integrator with a Newton projection back onto the starting
@@ -41,6 +47,8 @@ class Potential:
         for long integrations.  Potentials with an analytic solution (e.g.
         :class:`SquarePyramid`) override this.
         """
+        if n_sub is None:
+            n_sub = 64
         x = np.asarray(x, dtype=float).copy()
         y = np.asarray(y, dtype=float).copy()
         level = self.value(x, y)
@@ -52,13 +60,22 @@ class Potential:
             k4x, k4y = self.drift(x + h * k3x, y + h * k3y, B)
             x = x + (h / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
             y = y + (h / 6.0) * (k1y + 2 * k2y + 2 * k3y + k4y)
-            # project back onto the contour: one Newton step on V(r) = level
-            gx, gy = self.grad(x, y)
+            # project back onto the contour: one Newton step on V(r) = level.
+            # The correction is capped at one substep of arclength so that a
+            # walker passing close to a saddle or an extremum, where |grad V| is
+            # small and the Newton step is ill-conditioned, cannot be thrown
+            # across the landscape.
+            v, gx, gy = self.value_grad(x, y)
             g2 = gx * gx + gy * gy
             with np.errstate(divide="ignore", invalid="ignore"):
-                fac = np.where(g2 > 1e-30, (level - self.value(x, y)) / g2, 0.0)
-            x = x + fac * gx
-            y = y + fac * gy
+                fac = np.where(g2 > 1e-30, (level - v) / g2, 0.0)
+            dx, dy = fac * gx, fac * gy
+            step = np.hypot(dx, dy)
+            cap = h * np.sqrt(g2) / B          # arclength covered in one substep
+            with np.errstate(divide="ignore", invalid="ignore"):
+                scale = np.where(step > cap, np.where(step > 0, cap / step, 0.0), 1.0)
+            x = x + scale * dx
+            y = y + scale * dy
         return x, y
 
 
@@ -192,3 +209,69 @@ class Sinusoid(Potential):
         k = np.pi / self.a
         return (self.V0 * k * np.cos(k * x) * np.sin(k * y),
                 self.V0 * k * np.sin(k * x) * np.cos(k * y))
+
+
+class GaussianRandomField(Potential):
+    """An isotropic Gaussian random potential built from a sum of sine waves.
+
+        V(r) = Gamma sqrt(2/N) sum_j cos(k_j . r + phi_j)
+
+    with random phases, uniformly random directions, and wavenumbers drawn from
+    the Rayleigh density p(k) = k xi0^2 exp(-k^2 xi0^2 / 2) -- the weights of the
+    wavelengths are Gaussian in k.  That spectrum makes the correlation function
+    exactly Gaussian,
+
+        <V(0) V(r)> = Gamma^2 exp(-r^2 / 2 xi0^2),
+
+    so ``xi0`` *is* the correlation length, and
+
+        <V^2> = Gamma^2 ,   <|grad V|^2> = 2 Gamma^2 / xi0^2 .
+
+    The field is statistically homogeneous and isotropic, and is not periodic:
+    walkers never see an artificial lattice.  Contours are closed loops of every
+    size, with the percolating level at V = 0.
+    """
+
+    def __init__(self, xi0=1.0, Gamma=1.0, n_modes=64, seed=0):
+        self.xi0 = float(xi0)
+        self.Gamma = float(Gamma)
+        self.n_modes = int(n_modes)
+        self.seed = int(seed)
+        rng = np.random.default_rng(seed)
+        k = rng.rayleigh(scale=1.0 / self.xi0, size=self.n_modes)
+        ang = rng.uniform(0.0, 2.0 * np.pi, self.n_modes)
+        self.kx = k * np.cos(ang)
+        self.ky = k * np.sin(ang)
+        self.phase = rng.uniform(0.0, 2.0 * np.pi, self.n_modes)
+        self.amp = self.Gamma * np.sqrt(2.0 / self.n_modes)
+        # a length scale for callers that ask (used e.g. to seed walkers)
+        self.a = self.xi0
+
+    def _ph(self, x, y):
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        y = np.atleast_1d(np.asarray(y, dtype=float))
+        return (self.kx[:, None] * x[None, :] + self.ky[:, None] * y[None, :]
+                + self.phase[:, None])
+
+    def value(self, x, y):
+        return self.amp * np.cos(self._ph(x, y)).sum(axis=0)
+
+    def grad(self, x, y):
+        s = np.sin(self._ph(x, y))
+        return -self.amp * (self.kx @ s), -self.amp * (self.ky @ s)
+
+    def value_grad(self, x, y):
+        ph = self._ph(x, y)
+        s, c = np.sin(ph), np.cos(ph)
+        return (self.amp * c.sum(axis=0),
+                -self.amp * (self.kx @ s), -self.amp * (self.ky @ s))
+
+    @property
+    def rms_grad(self):
+        """sqrt(<|grad V|^2>) = sqrt(2) Gamma / xi0 (exact as n_modes -> inf)."""
+        return np.sqrt(2.0) * self.Gamma / self.xi0
+
+    def correlation(self, r):
+        """The exact ensemble correlation function <V(0) V(r)>."""
+        return self.Gamma ** 2 * np.exp(-np.asarray(r, float) ** 2
+                                        / (2.0 * self.xi0 ** 2))
