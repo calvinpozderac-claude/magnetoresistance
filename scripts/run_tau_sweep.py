@@ -35,16 +35,29 @@ def make_potential(name, xi, Gamma, seed, n_modes):
     raise ValueError(name)
 
 
+def D_predict(tau, r_c, xi, t0, potential, D_scale=1.0):
+    """Rough D used only to choose run lengths (standard convention).
+
+    On the pyramid the notes' own table is the natural estimate.  On the random
+    field contours near the percolating level are unbounded, D falls far more
+    slowly than 1/tau, and the pyramid formula badly underestimates it at large
+    tau -- an empirical power law calibrated on a few pilot runs is used instead.
+    """
+    if potential == "random":
+        return np.maximum(r_c ** 2 / (4.0 * tau), D_scale * 0.22 * tau ** -0.25)
+    return D_scale * theory.to_standard(theory.D_piecewise(tau, r_c, xi, t0))
+
+
 def sizing(tau, r_c, xi, t0, target_cells=100.0, min_steps=2000,
            max_steps=400_000, work_budget=6.0e7, min_walkers=256,
-           max_walkers=8192, max_time=None):
+           max_walkers=8192, max_time=None, D_scale=1.0, potential="pyramid"):
     """Run long enough to diffuse across many cells, cheap enough to finish.
 
     The run length is set from the *predicted* D so that the total simulated
     time is ``target_cells`` times what it takes to spread over one cell
     (2 xi)^2; the walker count then fills a fixed work budget.
     """
-    D_pred = theory.to_standard(theory.D_piecewise(tau, r_c, xi, t0))
+    D_pred = D_predict(tau, r_c, xi, t0, potential, D_scale)
     t_total = target_cells * (2.0 * xi) ** 2 / (4.0 * D_pred)
     if max_time is not None:
         t_total = min(t_total, max_time)
@@ -67,11 +80,22 @@ def main():
     p.add_argument("--n-modes", type=int, default=64, help="random field only")
     p.add_argument("--n-real", type=int, default=1,
                    help="independent disorder realisations (random field only)")
-    p.add_argument("--target-cells", type=float, default=100.0)
+    p.add_argument("--target-cells", type=float, default=100.0,
+                   help="run until the walkers have spread over this many "
+                        "(2 xi)^2 cells")
+    p.add_argument("--D-scale", type=float, default=1.0,
+                   help="multiplier on the predicted D used only for sizing")
     p.add_argument("--max-steps", type=int, default=400_000)
     p.add_argument("--work-budget", type=float, default=6.0e7)
-    p.add_argument("--max-substeps", type=int, default=96,
+    p.add_argument("--max-substeps", type=int, default=400,
                    help="cap on RK4 substeps per drift (random field only)")
+    p.add_argument("--substep-time", type=float, default=0.125,
+                   help="RK4 time step.  On the random field the potential "
+                        "leaks across contours once the step exceeds ~0.25 "
+                        "xi0/v_rms; 0.125 was checked against 0.0625.")
+    p.add_argument("--min-steps", type=int, default=2000)
+    p.add_argument("--min-walkers", type=int, default=256)
+    p.add_argument("--max-walkers", type=int, default=8192)
     p.add_argument("--collisions", choices=["poisson", "fixed"], default="poisson",
                    help="exponential drift times of mean tau (the notes' "
                         "'collide on average after tau'), or exactly tau")
@@ -100,11 +124,16 @@ def main():
         n_steps, n_walkers = sizing(tau, args.rc, args.xi, t0,
                                     target_cells=args.target_cells,
                                     max_steps=args.max_steps,
-                                    work_budget=args.work_budget)
-        n_walkers = max(n_walkers // args.n_real, 64)
+                                    work_budget=args.work_budget,
+                                    min_steps=args.min_steps,
+                                    min_walkers=args.min_walkers,
+                                    max_walkers=args.max_walkers,
+                                    D_scale=getattr(args, "D_scale"),
+                                    potential=args.potential)
+        n_walkers = max(n_walkers // args.n_real, 64) if args.n_real > 1 else n_walkers
         # RK4 substeps: keep each substep's arc well below the curvature scale
-        n_sub = int(np.clip(np.ceil(tau * (args.Gamma / args.xi / args.B)
-                                    / (0.15 * args.xi)), 4, args.max_substeps))
+        n_sub = int(np.clip(np.ceil(tau / args.substep_time), 4,
+                            args.max_substeps))
         tk = time.time()
         Ds = []
         for r in range(args.n_real):
