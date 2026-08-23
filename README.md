@@ -71,6 +71,10 @@ tests/test_physics.py  contour conservation, exact-vs-RK4, free-walk limit
 ```
 pip install numpy matplotlib
 python scripts/run_pyramid.py            # ~5 min: the r_c sweep at B = 1, τ = 1
+# optional ~11 min extension to r_c = 0.0125a (the runs get long as (a/r_c)^2)
+python scripts/run_pyramid.py --rc-min 0.0125 --rc-max 0.0225 --n-rc 3 \
+    --max-steps 1500000 --min-walkers 384 --seed 7000 \
+    --out data/D_vs_rc_pyramid_small.npz
 python scripts/plot_D_vs_rc.py           # figures/D_vs_rc_pyramid.png
 python scripts/plot_illustration.py      # figures/pyramid_illustration.png
 python -m pytest tests -q
@@ -113,15 +117,17 @@ exponent that is not the naive one**:
 
 | regime | measured | law |
 |---|---|---|
-| `r_c ≪ a` | local slope ≈ 0.95 | `D ≈ 0.53 a² r_c / τ`  — **linear** in `r_c` |
-| `r_c ≫ a` | local slope ≈ 1.9 → 2 | `D → r_c²/4τ`, the free random walk (ratio 1.01 at `r_c = 5a`) |
+| `r_c ≪ a` | slope 0.96 over the decade below `0.1a` | `D ≈ 0.55 a² r_c / τ`  — **linear** in `r_c` |
+| `r_c ≫ a` | slope 1.90 → 2 | `D → r_c²/4τ`, the free random walk (ratio 1.01 at `r_c = 5a`) |
+
+The sweep covers `r_c = 0.0125a … 5a`, i.e. 2.6 decades.
 
 The large-`r_c` end is the trivial one: the hops dwarf the landscape, the walk is
 just `n` random steps of length `r_c`, and `D = r_c²/4τ`.
 
 The small-`r_c` end is the interesting one. Naively a walker that hops by `r_c`
-should give `D ~ r_c²/τ`; instead it is **larger by a factor ~ a/r_c** (a factor
-of 74 at `r_c = 0.03a`), and linear in `r_c`. The reason is that the hop is not
+should give `D ~ r_c²/τ`; instead it is **larger by a factor ~ a/r_c** (190x at
+`r_c = 0.0125a`), and linear in `r_c`. The reason is that the hop is not
 the transport step — the contour drift is:
 
 * A kick changes the contour *level* by `δV = ∇V·δr`, i.e. `⟨δV²⟩ = 2V₀²r_c²/a²`.
@@ -134,7 +140,7 @@ the transport step — the contour drift is:
 * The walker sits within `δV ~ V₀ r_c/a` of the percolating level for a fraction
   `~ r_c/a` of its steps, so cell-to-cell moves happen at rate `~ r_c/(aτ)`,
   each of size `~a`:  `D ~ a² (r_c/a)/τ ∝ r_c`, with the measured coefficient
-  0.53.
+  0.55 (flat to ±6% over the whole decade `0.0125 ≤ r_c/a ≤ 0.13`).
 
 In between (`0.4 ≲ r_c/a ≲ 1.2`) the local slope *dips* to ≈ 0.7 before turning
 up to 2 — the inset of the first figure shows this as a minimum of

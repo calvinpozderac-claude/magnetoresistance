@@ -2,3 +2,6 @@ square pyramid: V0=1.0 a=1.0 | B=1.0 tau=1.0 | drift speed = 2
      r_c  n_steps  walkers            D       err  dlnMSD/dlnt      s
   0.0125  1280000      384   0.00741864  0.000131        1.010  348.2
   0.0168   711111      384   0.00925827  0.000298        0.983  178.2
+  0.0225   395061      384    0.0126699  0.000619        1.001  111.0
+total 637.4 s
+wrote data/D_vs_rc_pyramid_small.npz

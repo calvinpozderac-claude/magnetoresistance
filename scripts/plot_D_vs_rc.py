@@ -23,7 +23,8 @@ def power_law_exponent(x, y, lo, hi):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", nargs="+",
-                   default=["data/D_vs_rc_pyramid.npz"],
+                   default=["data/D_vs_rc_pyramid.npz",
+                            "data/D_vs_rc_pyramid_small.npz"],
                    help="one or more sweep files; they are merged and sorted")
     p.add_argument("--out", default="figures/D_vs_rc_pyramid.png")
     args = p.parse_args()
@@ -53,7 +54,7 @@ def main():
     ax.plot(x_hi, x_hi ** 2 / (4 * tau), ls=":", lw=1.6, color="0.25", zorder=1,
             label=r"$D = r_c^2/4\tau$   (free walk, slope 2)")
     ax.axvline(a, color="0.8", lw=1.0, zorder=0)
-    ax.annotate("$r_c = a$", xy=(a * 1.06, 0.60), xycoords=("data", "axes fraction"),
+    ax.annotate("$r_c = a$", xy=(a * 1.06, 0.88), xycoords=("data", "axes fraction"),
                 color="0.5", fontsize=9)
 
     ax.errorbar(rc, D, yerr=D_err, fmt="o", ms=5.5, lw=1.2, capsize=2.5,
