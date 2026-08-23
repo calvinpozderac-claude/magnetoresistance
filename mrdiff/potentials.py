@@ -39,44 +39,137 @@ class Potential:
         gx, gy = self.grad(x, y)
         return self.value(x, y), gx, gy
 
-    def propagate(self, x, y, tau, B=1.0, n_sub=None):
+    def _rk4_project(self, x, y, dt, B):
+        """One RK4 step of the drift, then a Newton projection back onto the
+        contour the walker started this step on."""
+        level = self.value(x, y)
+        k1x, k1y = self.drift(x, y, B)
+        k2x, k2y = self.drift(x + 0.5 * dt * k1x, y + 0.5 * dt * k1y, B)
+        k3x, k3y = self.drift(x + 0.5 * dt * k2x, y + 0.5 * dt * k2y, B)
+        k4x, k4y = self.drift(x + dt * k3x, y + dt * k3y, B)
+        x = x + (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
+        y = y + (dt / 6.0) * (k1y + 2 * k2y + 2 * k3y + k4y)
+        # The correction is capped at one substep of arclength so that a walker
+        # passing close to a saddle or an extremum, where |grad V| is small and
+        # the Newton step is ill-conditioned, cannot be thrown across the
+        # landscape.
+        v, gx, gy = self.value_grad(x, y)
+        g2 = gx * gx + gy * gy
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fac = np.where(g2 > 1e-30, (level - v) / g2, 0.0)
+        ddx, ddy = fac * gx, fac * gy
+        step = np.hypot(ddx, ddy)
+        cap = dt * np.sqrt(g2) / B
+        with np.errstate(divide="ignore", invalid="ignore"):
+            scale = np.where(step > cap, np.where(step > 0, cap / step, 0.0), 1.0)
+        return x + scale * ddx, y + scale * ddy
+
+    def _integrate_time(self, x, y, t_total, B, h):
+        """Advance every walker along its own contour by its own time.
+
+        A *fixed* step ``h`` is used for all walkers, with the number of steps
+        set per walker, rather than a fixed number of steps of size t/n.  That
+        matters once the drift times are exponentially distributed: a walker
+        that happens to draw t = 5 tau must not be integrated with a step five
+        times coarser than the one the scheme was validated at.  Walkers that
+        finish drop out of the working set, so the cost follows the total time
+        actually integrated rather than the largest time in the batch.
+        """
+        x = np.array(x, dtype=float, copy=True)
+        y = np.array(y, dtype=float, copy=True)
+        rem = np.array(np.broadcast_to(t_total, x.shape), dtype=float, copy=True)
+        while True:
+            ia = np.flatnonzero(rem > 1e-13)
+            if ia.size == 0:
+                return x, y
+            dt = np.minimum(h, rem[ia])
+            xn, yn = self._rk4_project(x[ia], y[ia], dt, B)
+            x[ia], y[ia] = xn, yn
+            rem[ia] -= dt
+
+    def orbit_period(self, x, y, B=1.0, h=0.125, max_time=np.inf,
+                     r_in=1.5, r_out=6.0):
+        """Time for each guiding centre to come back round its closed contour.
+
+        The walker is integrated from its starting point until it has left a
+        neighbourhood of radius ``r_out * v * h`` and then returned to within
+        ``r_in * v * h`` -- both scaled by the arclength the walker covers in one
+        step, so that the test works equally for a tiny orbit round an extremum
+        and a large one near the percolating level.  The crossing time is then
+        refined by projecting the residual offset onto the local drift velocity,
+        which removes the O(h) detection lag.
+
+        Returns ``(period, closed, x_end, y_end)``.  Walkers that have not come
+        back within ``max_time`` get ``inf`` and ``False``, and their end point
+        is their position at exactly ``max_time`` -- so passing ``max_time=tau``
+        means a contour longer than the drift itself costs one integration, not
+        two.
+        """
+        x = np.array(np.atleast_1d(x), dtype=float, copy=True)
+        y = np.array(np.atleast_1d(y), dtype=float, copy=True)
+        rx, ry = x.copy(), y.copy()
+        gx, gy = self.grad(x, y)
+        v0 = np.hypot(gx, gy) / B
+        rin = np.maximum(r_in * v0 * h, 1e-14)
+        rout = r_out * v0 * h
+        limit = np.array(np.broadcast_to(max_time, x.shape), dtype=float)
+        elapsed = np.zeros(x.shape)
+        left = np.zeros(x.shape, dtype=bool)
+        period = np.full(x.shape, np.inf)
+        done = np.zeros(x.shape, dtype=bool)
+        while True:
+            ia = np.flatnonzero(~done & (elapsed < limit - 1e-13))
+            if ia.size == 0:
+                return period, done, x, y
+            dt = np.minimum(h, limit[ia] - elapsed[ia])
+            xn, yn = self._rk4_project(x[ia], y[ia], dt, B)
+            x[ia], y[ia] = xn, yn
+            elapsed[ia] += dt
+            d = np.hypot(xn - rx[ia], yn - ry[ia])
+            left[ia] |= d > rout[ia]
+            close = left[ia] & (d < rin[ia])
+            if close.any():
+                ic = ia[close]
+                gxc, gyc = self.grad(x[ic], y[ic])
+                vx, vy = -gyc / B, gxc / B
+                v2 = vx * vx + vy * vy
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    corr = np.where(v2 > 0, ((x[ic] - rx[ic]) * vx
+                                             + (y[ic] - ry[ic]) * vy) / v2, 0.0)
+                period[ic] = elapsed[ic] - corr
+                done[ic] = True
+
+    def propagate(self, x, y, tau, B=1.0, n_sub=None, h=None,
+                  loop_detect=False):
         """Advance guiding centres along their contours for a time ``tau``.
 
-        Generic RK4 integrator with a Newton projection back onto the starting
-        contour after every substep, so that V is conserved to round-off even
-        for long integrations.  Potentials with an analytic solution (e.g.
-        :class:`SquarePyramid`) override this.
+        RK4 with a Newton projection back onto the starting contour after every
+        substep, so that V is conserved to round-off.  Potentials with an
+        analytic solution (e.g. :class:`SquarePyramid`) override this.
+
+        With ``loop_detect=True`` the closed orbit is timed first and the drift
+        is reduced modulo that period.  On a contour of period P a drift of
+        time tau then costs at most ~2P of integration instead of tau, which is
+        what makes tau >> P affordable.  Once the walker has gone round many
+        times its phase on the orbit is set by the dwell-time measure anyway, so
+        replacing tau by tau mod P changes nothing statistical.
         """
-        if n_sub is None:
-            n_sub = 64
-        x = np.asarray(x, dtype=float).copy()
-        y = np.asarray(y, dtype=float).copy()
-        level = self.value(x, y)
-        h = tau / n_sub
-        for _ in range(n_sub):
-            k1x, k1y = self.drift(x, y, B)
-            k2x, k2y = self.drift(x + 0.5 * h * k1x, y + 0.5 * h * k1y, B)
-            k3x, k3y = self.drift(x + 0.5 * h * k2x, y + 0.5 * h * k2y, B)
-            k4x, k4y = self.drift(x + h * k3x, y + h * k3y, B)
-            x = x + (h / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
-            y = y + (h / 6.0) * (k1y + 2 * k2y + 2 * k3y + k4y)
-            # project back onto the contour: one Newton step on V(r) = level.
-            # The correction is capped at one substep of arclength so that a
-            # walker passing close to a saddle or an extremum, where |grad V| is
-            # small and the Newton step is ill-conditioned, cannot be thrown
-            # across the landscape.
-            v, gx, gy = self.value_grad(x, y)
-            g2 = gx * gx + gy * gy
-            with np.errstate(divide="ignore", invalid="ignore"):
-                fac = np.where(g2 > 1e-30, (level - v) / g2, 0.0)
-            dx, dy = fac * gx, fac * gy
-            step = np.hypot(dx, dy)
-            cap = h * np.sqrt(g2) / B          # arclength covered in one substep
-            with np.errstate(divide="ignore", invalid="ignore"):
-                scale = np.where(step > cap, np.where(step > 0, cap / step, 0.0), 1.0)
-            x = x + scale * dx
-            y = y + scale * dy
-        return x, y
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        tau_a = np.array(np.broadcast_to(np.asarray(tau, dtype=float), x.shape),
+                         dtype=float)
+        if h is None:
+            h = (np.max(tau_a) / n_sub) if n_sub else 0.125
+        if loop_detect:
+            period, closed, xe, ye = self.orbit_period(x, y, B=B, h=h,
+                                                       max_time=tau_a)
+            # A walker whose orbit never closed inside tau has just been
+            # integrated for exactly tau: keep that end point.  One that closed
+            # is restarted from its true starting point for the leftover time.
+            resid = np.where(closed, np.mod(tau_a, period), 0.0)
+            xr, yr = self._integrate_time(x, y, resid, B, h)
+            return np.where(closed, xr, xe), np.where(closed, yr, ye)
+        return self._integrate_time(x, y, tau_a, B, h)
 
 
 class SquarePyramid(Potential):
@@ -134,8 +227,13 @@ class SquarePyramid(Potential):
         return 2.0 * self.V0 / self.a
 
     # -- exact contour propagation ---------------------------------------
-    def propagate(self, x, y, tau, B=1.0, n_sub=None):
-        """Exact motion along the square equipotentials for a time ``tau``."""
+    def propagate(self, x, y, tau, B=1.0, n_sub=None, h=None,
+                  loop_detect=False):
+        """Exact motion along the square equipotentials for a time ``tau``.
+
+        ``n_sub``, ``h`` and ``loop_detect`` are accepted and ignored: this map
+        is closed-form and already exact for any ``tau``.
+        """
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         cx, cy, X, Y, s, ell = self._cell(x, y)

@@ -43,7 +43,8 @@ class WalkResult:
 
 def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
              n_snapshots=128, fit_lags=(0.05, 0.5), n_batches=8, box=None,
-             n_msd_points=140, n_sub=None, collisions="fixed"):
+             n_msd_points=140, n_sub=None, collisions="fixed", h=None,
+             loop_detect=False):
     """Run the drift--kick walk and extract D.
 
     Parameters
@@ -89,6 +90,14 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
     n_sub : int or None
         RK4 substeps per drift, for potentials that integrate their contours
         numerically.  Ignored by potentials with an analytic propagator.
+    h : float or None
+        Fixed RK4 time step.  Preferred over ``n_sub`` when the drift times are
+        exponential, because it holds the step size (and so the accuracy) the
+        same for every walker no matter how long a drift it drew.
+    loop_detect : bool
+        Time each closed orbit and reduce the drift modulo its period.  This is
+        what makes tau much larger than the orbital period affordable: the cost
+        of a drift stops growing with tau.
     box : float or None
         Walkers are seeded uniformly in ``[0, box)^2``.  Defaults to one lattice
         period of the potential (2a), which is the stationary distribution: the
@@ -117,7 +126,8 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
 
     for step in range(1, n_steps + 1):
         dt = rng.exponential(tau, n_walkers) if collisions == "poisson" else tau
-        x, y = potential.propagate(x, y, dt, B=B, n_sub=n_sub)
+        x, y = potential.propagate(x, y, dt, B=B, n_sub=n_sub, h=h,
+                                   loop_detect=loop_detect)
         theta = rng.random(n_walkers) * (2.0 * np.pi)
         x = x + r_c * np.cos(theta)
         y = y + r_c * np.sin(theta)
@@ -170,7 +180,7 @@ def _fit_D(lags, msd, fit_lags):
 
 
 def trajectory(potential, r_c, tau, n_steps, B=1.0, seed=0, start=None,
-               n_samples_per_arc=32, n_sub=None, collisions="fixed"):
+               n_samples_per_arc=32, n_sub=None, collisions="fixed", h=None):
     """A single walker's path: the list of contour arcs it drifts along.
 
     Each arc is sampled by propagating the *same* starting point for a range of
@@ -189,7 +199,7 @@ def trajectory(potential, r_c, tau, n_steps, B=1.0, seed=0, start=None,
         ts = np.linspace(0.0, dt, n_samples_per_arc)
         xs, ys = potential.propagate(np.full(n_samples_per_arc, x[0]),
                                      np.full(n_samples_per_arc, y[0]), ts, B=B,
-                                     n_sub=n_sub)
+                                     n_sub=n_sub, h=h)
         arcs.append(np.stack([xs, ys]))
         x, y = xs[-1:].copy(), ys[-1:].copy()
         theta = rng.random() * 2.0 * np.pi

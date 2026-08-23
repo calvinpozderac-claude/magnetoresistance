@@ -44,7 +44,7 @@ def D_predict(tau, r_c, xi, t0, potential, D_scale=1.0):
     tau -- an empirical power law calibrated on a few pilot runs is used instead.
     """
     if potential == "random":
-        return np.maximum(r_c ** 2 / (4.0 * tau), D_scale * 0.22 * tau ** -0.25)
+        return np.maximum(r_c ** 2 / (4.0 * tau), D_scale * 0.22 * tau ** -0.22)
     return D_scale * theory.to_standard(theory.D_piecewise(tau, r_c, xi, t0))
 
 
@@ -89,6 +89,9 @@ def main():
     p.add_argument("--work-budget", type=float, default=6.0e7)
     p.add_argument("--max-substeps", type=int, default=400,
                    help="cap on RK4 substeps per drift (random field only)")
+    p.add_argument("--loop-detect", action="store_true",
+                   help="time each closed orbit and take the drift modulo its "
+                        "period, so that tau >> orbital period stays cheap")
     p.add_argument("--substep-time", type=float, default=0.125,
                    help="RK4 time step.  On the random field the potential "
                         "leaks across contours once the step exceeds ~0.25 "
@@ -121,7 +124,7 @@ def main():
     print(f"{args.potential}: xi={args.xi} Gamma={args.Gamma} B={args.B} "
           f"| T0={t0:g} | r_c={args.rc} | collisions={args.collisions} "
           f"| realisations={args.n_real}")
-    print(f"{'tau':>10} {'tau/T0':>9} {'n_steps':>8} {'walkers':>7} {'nsub':>5} "
+    print(f"{'tau':>10} {'tau/T0':>9} {'n_steps':>8} {'walkers':>7} {'n/h':>5} "
           f"{'D(std)':>11} {'err':>9} {'slope':>6} {'s':>6}")
     t_all = time.time()
     for k, tau in enumerate(taus):
@@ -140,9 +143,10 @@ def main():
                                         D_scale=getattr(args, "D_scale"),
                                         potential=args.potential)
         n_walkers = max(n_walkers // args.n_real, 64) if args.n_real > 1 else n_walkers
-        # RK4 substeps: keep each substep's arc well below the curvature scale
-        n_sub = int(np.clip(np.ceil(tau / args.substep_time), 4,
-                            args.max_substeps))
+        # A fixed RK4 step, small enough that the projection holds the walker
+        # on its contour, but never fewer than 4 steps across a short drift.
+        h = min(args.substep_time, tau / 4.0)
+        n_sub = int(np.ceil(tau / h))
         tk = time.time()
         Ds = []
         for r in range(args.n_real):
@@ -151,7 +155,8 @@ def main():
             box = 4.0 * args.xi if args.potential == "pyramid" else 12.0 * args.xi
             res = simulate(pot, r_c=args.rc, tau=tau, n_steps=n_steps,
                            n_walkers=n_walkers, B=args.B, seed=args.seed + k + 7 * r,
-                           box=box, n_sub=n_sub, collisions=args.collisions)
+                           box=box, h=h, loop_detect=args.loop_detect,
+                           collisions=args.collisions)
             Ds.append(res.D)
             if r == 0:
                 D_err[k], ll[k] = res.D_err, res.fit_slope_loglog
@@ -159,7 +164,7 @@ def main():
         if args.n_real > 1:
             D_err[k] = float(np.std(Ds, ddof=1) / np.sqrt(args.n_real))
         n_steps_a[k], n_walk_a[k] = n_steps, n_walkers
-        print(f"{tau:10.4g} {tau / t0:9.4g} {n_steps:8d} {n_walkers:7d} {n_sub:5d} "
+        print(f"{tau:10.4g} {tau / t0:9.4g} {n_steps:8d} {n_walkers:7d} {n_sub:5.4g} "
               f"{D[k]:11.5g} {D_err[k]:9.3g} {ll[k]:6.3f} {time.time() - tk:6.1f}")
     print(f"total {time.time() - t_all:.1f} s")
 
