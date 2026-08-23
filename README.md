@@ -161,23 +161,63 @@ are closed squares trapped inside one cell, but a random landscape has contours
 of *every* size, diverging at the percolating level `V = 0`, and a walker that
 lands near that level rides a single contour for tens of `xi0`.
 
-![D vs tau, random](figures/D_vs_tau_random.png)
+![D vs tau, random](figures/D_vs_tau_random_only.png)
 
-**`D(tau)` is far shallower than on the pyramid.** Over `tau/T0 = 0.03 ... 30`
-at `r_c/xi0 = 0.1`:
+Sweeping `tau/T0` over seven decades at `r_c/xi0 = 0.1` gives **three regimes**:
 
-| landscape | measured exponent in `D ~ tau^-alpha` |
-|---|---|
-| random, `tau/T0 = 0.3 - 30` | **0.21 +- 0.01** |
-| random, whole range | 0.23 +- 0.01 |
-| pyramid, `tau/T0 = 0.3 - 30` | 0.80 +- 0.04 |
-| pyramid, `tau/T0 > 2` (notes' regime 3) | 0.98 +- 0.02 |
+| regime | `tau/T0` | measured | |
+|---|---|---|---|
+| collision-limited | `1e-4 .. 1e-3` | `D ~ tau^(-0.981 +- 0.009)` | the free walk `D = r_c^2/2 tau`, to 2-7% |
+| landscape-dominated | `5e-3 .. 1` | `D ~ tau^(-0.248 +- 0.013)` | |
+| many loops per collision | `12 .. 600` | `D ~ tau^(-0.30 +- 0.04)` | |
 
-so the ratio `D_random/D_pyramid` grows from about 3 at `tau ~ T0/3` to **50** at
-`tau = 30 T0`. The notes' regime-3 picture -- only walkers within `r_c` of a cell
-edge can move on, and they move exactly one cell -- has no analogue here: there
-is no cell to escape, and a rarer collision simply means the walker rides its
-contour further, which nearly cancels the explicit `1/tau`.
+1. **Short `tau` recovers the free walk.** With a collision every `1e-4 T0` the
+   drift covers only `1e-4 xi0` between kicks and the landscape is irrelevant:
+   `D/(r_c^2/4 tau) = 1.02` at the shortest time, rising to 1.1 by
+   `tau/T0 = 2e-3` as the drift starts to help. By `tau/T0 = 300` the landscape
+   has multiplied D by nearly **7000** over the free-walk value.
+
+2. **The large-`tau` regime is a distinct power law, and it is the percolation
+   one.** Once `tau` exceeds the typical orbital period (median ~12 `T0`, from
+   `Potential.orbit_period`) a walker on a closed contour has gone all the way
+   round, so its displacement stops growing -- but contours near the percolating
+   level are unbounded and fractal, and those are the ones that keep
+   transporting. Measuring the displacement per collision directly:
+
+   ```
+   <|dr|^2> per collision  ~  tau^(0.715 +- 0.041)      (tau/T0 >= 12)
+   ```
+
+   In time `tau` a walker covers arclength `v tau`, which on a hull of fractal
+   dimension 7/4 spans a region of size `(v tau)^(4/7)`; the level window whose
+   contours are that large is `|V| < (v tau)^(-3/7)` with `xi(V) ~ |V|^(-4/3)`.
+   Averaging `min(contour size, (v tau)^(4/7))^2` over the level distribution
+   gives `<|dr|^2> ~ (v tau)^(5/7)`, i.e. **`5/7 = 0.714`** against the measured
+   `0.715 +- 0.041`, and therefore
+
+   ```
+   D ~ tau^(5/7 - 1) = tau^(-2/7) = tau^(-0.286)
+   ```
+
+   against the measured `-0.30 +- 0.04`. The intermediate `-0.25` regime is the
+   crossover between the free walk and this asymptote, not a law of its own.
+
+**Efficiency: loop detection.** Reaching `tau/T0 = 600` by brute-force
+integration would mean 4800 RK4 steps for every single drift. Instead
+`Potential.orbit_period` times the closed orbit -- integrating until the walker
+has left a neighbourhood of its start and come back, with both radii scaled by
+the arclength covered in one step so the test works for a tiny orbit round an
+extremum and a huge one near percolation alike, then refining the crossing time
+by projecting the residual offset onto the drift velocity -- and
+`propagate(loop_detect=True)` replaces `tau` by `tau mod P`. A drift then costs
+about `2P` of integration instead of `tau`. It was checked against the exact
+pyramid map (periods to 0.1%), against the sinusoid (propagating by the detected
+period returns to the start to 3e-4) and against brute force on the random field
+itself; it is 14x faster at `tau = 1000` and the gap grows linearly. A walker
+whose orbit does not close within `tau` has by then been integrated for exactly
+`tau`, so it keeps that end point rather than paying twice.
+
+Two numerical points that mattered:
 
 Two numerical points that mattered:
 
@@ -188,6 +228,10 @@ Two numerical points that mattered:
   therefore repeated with `--fixed-time`, every `tau` run for the *same* total
   time so that D comes from one common lag window. The two protocols agree to
   within 5% at every matched `tau`, so the exponent is not an artefact of it.
+* **Fixed step size, not a fixed step count.** With exponential drift times, a
+  walker that draws `dt = 5 tau` must not be integrated with a step five times
+  coarser than the scheme was validated at, so the integrator takes a fixed `h`
+  and a per-walker number of steps.
 * **RK4 step size.** The projection cannot hold a walker on its contour once the
   time step exceeds ~`0.25 xi0/v_rms`: at `h = 1` the level drifts by up to 0.19
   and D is inflated 2x. At `h = 0.25` and `h = 0.125`, V is conserved to 5e-7 and
@@ -196,9 +240,9 @@ Two numerical points that mattered:
   +-20% realisation scatter, which is why each point averages 5 independent
   fields.
 
-Not attempted here: a percolation-scaling (Isichenko-style) prediction for that
-exponent. The measurement is what it is; the notes' own section-6 derivation is
-excluded from `mrdiff/theory.py` on the grounds that its argument is unsound.
+The percolation scaling quoted above uses only the standard 2-D exponents (hull
+dimension 7/4, `nu = 4/3`); the notes' own section-6 derivation is still excluded
+from `mrdiff/theory.py` on the grounds that its argument is unsound.
 
 ## Modelling choices worth knowing about
 

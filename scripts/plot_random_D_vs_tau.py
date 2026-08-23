@@ -42,6 +42,8 @@ def main():
     p.add_argument("--windows", nargs="*", type=float,
                    default=[1e-4, 3e-3, 0.3, 30.0, 100.0, 1e9],
                    help="pairs of (lo, hi) tau bounds, one pair per regime fit")
+    p.add_argument("--annotate", default=None,
+                   help="text box drawn in the upper right")
     p.add_argument("--period", type=float, default=None,
                    help="median orbital period, drawn as a vertical marker")
     args = p.parse_args()
@@ -104,6 +106,10 @@ def main():
                  r"Poisson collisions", fontsize=11)
     ax.grid(True, which="both", alpha=0.22, lw=0.6)
     ax.legend(frameon=False, fontsize=9.5, loc="lower left")
+    if args.annotate:
+        ax.text(0.975, 0.965, args.annotate, transform=ax.transAxes, ha="right",
+                va="top", fontsize=9.5, color="0.2",
+                bbox=dict(boxstyle="round,pad=0.5", fc="white", ec="0.8", lw=0.8))
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     fig.savefig(args.out, dpi=195)
