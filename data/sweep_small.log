@@ -1,2 +1,3 @@
 square pyramid: V0=1.0 a=1.0 | B=1.0 tau=1.0 | drift speed = 2
      r_c  n_steps  walkers            D       err  dlnMSD/dlnt      s
+  0.0125  1280000      384   0.00741864  0.000131        1.010  348.2
