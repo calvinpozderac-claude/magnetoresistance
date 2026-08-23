@@ -23,7 +23,7 @@ from mrdiff import SquarePyramid, simulate  # noqa: E402
 
 
 def sizing(r_c, a=1.0, steps_coeff=200.0, max_steps=200_000, min_steps=3000,
-           work_budget=4.0e7, min_walkers=512, max_walkers=8192):
+           work_budget=4.0e7, min_walkers=512, max_walkers=8192):  # noqa: D401
     """How long a run does this r_c need?
 
     Small kicks randomise the walker's *contour level* only diffusively: it
@@ -48,6 +48,9 @@ def main():
     p.add_argument("--rc-max", type=float, default=5.0)
     p.add_argument("--n-rc", type=int, default=26)
     p.add_argument("--seed", type=int, default=2024)
+    p.add_argument("--max-steps", type=int, default=200_000,
+                   help="cap on the run length (raise it for very small r_c)")
+    p.add_argument("--min-walkers", type=int, default=512)
     p.add_argument("--out", default="data/D_vs_rc_pyramid.npz")
     args = p.parse_args()
 
@@ -66,7 +69,8 @@ def main():
           f"{'dlnMSD/dlnt':>12} {'s':>6}")
     t_all = time.time()
     for k, r_c in enumerate(rcs):
-        n_steps, n_walkers = sizing(r_c, a=args.a)
+        n_steps, n_walkers = sizing(r_c, a=args.a, max_steps=args.max_steps,
+                                    min_walkers=args.min_walkers)
         t0 = time.time()
         res = simulate(pot, r_c=r_c, tau=args.tau, n_steps=n_steps,
                        n_walkers=n_walkers, B=args.B, seed=args.seed + k,

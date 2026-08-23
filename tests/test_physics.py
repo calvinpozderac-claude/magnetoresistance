@@ -71,3 +71,17 @@ def test_diffusive_regime_reached():
     res = simulate(pot, r_c=0.5, tau=1.0, n_steps=3000, n_walkers=4096, seed=6)
     assert res.fit_slope_loglog == pytest.approx(1.0, abs=0.1)
     assert res.D > 0
+
+
+def test_no_net_drift():
+    """Hills circulate one way and valleys the other, in equal numbers, so the
+    checkerboard carries no net current: <r(t) - r(0)> stays ~0 while the
+    spread grows like sqrt(4Dt)."""
+    pot = SquarePyramid()
+    res = simulate(pot, r_c=0.3, tau=1.0, n_steps=2000, n_walkers=4096, seed=8)
+    x, y = res.positions
+    n = x.size
+    spread = np.sqrt(4 * res.D * res.n_steps * res.tau)
+    # the mean of n displacements of typical size `spread` is itself ~
+    # spread/sqrt(n); allow 4 sigma
+    assert np.hypot(x.mean() - 1.0, y.mean() - 1.0) < 4 * spread / np.sqrt(n)

@@ -34,7 +34,7 @@ def main(out="figures/pyramid_illustration.png"):
                linewidths=0.4, alpha=0.35)
 
     r_c = 0.35
-    arcs = trajectory(pot, r_c=r_c, tau=tau, n_steps=90, B=B, seed=3,
+    arcs = trajectory(pot, r_c=r_c, tau=tau, n_steps=60, B=B, seed=3,
                       start=(1.2, 1.35))
     for k, arc in enumerate(arcs):
         ax.plot(arc[0], arc[1], color="k", lw=1.5, solid_capstyle="round",
@@ -58,13 +58,13 @@ def main(out="figures/pyramid_illustration.png"):
                                   (3.0, 3000, 4096, "#b33a3a")]:
         res = simulate(pot, r_c=r_c, tau=tau, n_steps=n_steps, n_walkers=nw,
                        B=B, seed=99, n_snapshots=140)
-        ax.plot(res.lags, res.tamsd, lw=1.7, color=col,
+        ax.plot(res.msd_times, res.msd, lw=1.7, color=col,
                 label=rf"$r_c={r_c}$,  $D={res.D:.3g}$")
-        ax.plot(res.lags, 4 * res.D * res.lags, lw=0.9, ls="--", color="0.4",
-                zorder=1)
-    ax.set(xscale="log", yscale="log", xlabel=r"lag time  $\Delta t/\tau$",
-           ylabel=r"$\langle |{\bf r}(t+\Delta t)-{\bf r}(t)|^2 \rangle / a^2$",
-           title="Time-averaged MSD (dashed: $4D\\Delta t$ fits)")
+        ax.plot(res.msd_times, 4 * res.D * res.msd_times, lw=0.9, ls="--",
+                color="0.4", zorder=1)
+    ax.set(xscale="log", yscale="log", xlabel=r"time  $t/\tau$",
+           ylabel=r"$\langle |{\bf r}(t)-{\bf r}(0)|^2 \rangle / a^2$",
+           title="Mean squared displacement (dashed: the fitted $4Dt$)")
     ax.grid(True, which="both", alpha=0.25, lw=0.6)
     ax.legend(frameon=False, fontsize=9.5, loc="upper left")
 

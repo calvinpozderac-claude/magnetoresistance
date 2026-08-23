@@ -28,7 +28,7 @@ import numpy as np
 class WalkResult:
     r_c: float
     tau: float
-    times: np.ndarray          # snapshot times, measured from the start
+    msd_times: np.ndarray      # log-spaced times, measured from the start
     msd: np.ndarray            # <|r(t) - r(0)|^2>, single time origin
     lags: np.ndarray           # lag times for the time-averaged MSD
     tamsd: np.ndarray          # <|r(t+dt) - r(t)|^2>, averaged over origins
@@ -42,7 +42,8 @@ class WalkResult:
 
 
 def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
-             n_snapshots=128, fit_lags=(0.05, 0.5), n_batches=8, box=None):
+             n_snapshots=128, fit_lags=(0.05, 0.5), n_batches=8, box=None,
+             n_msd_points=140):
     """Run the drift--kick walk and extract D.
 
     Parameters
@@ -69,6 +70,10 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
         linear fit.  The lower end discards the sub-diffusive transient (which
         lasts ~ (a/r_c)^2 steps), the upper end keeps enough distinct origins
         for the average to be meaningful.
+    n_msd_points : int
+        The single-origin MSD is additionally recorded on a log-spaced time
+        grid spanning the whole run, which resolves the sub-diffusive transient
+        that the (evenly spaced) time-averaged MSD starts after.
     n_batches : int
         Walkers are split into this many batches; the scatter of the per-batch
         diffusion coefficients gives the error bar.
@@ -88,7 +93,12 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
 
     pos = rng.random((2, n_walkers)) * box
     x, y = pos[0].copy(), pos[1].copy()
+    x0, y0 = x.copy(), y.copy()
     snaps = np.empty((n_snapshots, 2, n_walkers))
+
+    msd_steps = np.unique(np.geomspace(1, n_steps, n_msd_points).astype(int))
+    msd = np.empty(msd_steps.size)
+    next_msd = 0
 
     for step in range(1, n_steps + 1):
         x, y = potential.propagate(x, y, tau, B=B)
@@ -99,9 +109,11 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
             k = step // every - 1
             snaps[k, 0] = x
             snaps[k, 1] = y
+        if next_msd < msd_steps.size and step == msd_steps[next_msd]:
+            msd[next_msd] = ((x - x0) ** 2 + (y - y0) ** 2).mean()
+            next_msd += 1
 
-    times = np.arange(1, n_snapshots + 1) * every * tau
-    msd = ((snaps - snaps[0]) ** 2).sum(axis=1).mean(axis=1)
+    msd_times = msd_steps * tau
 
     # time-averaged MSD: for each lag, average over every available origin
     lags = np.arange(1, n_snapshots) * every * tau
@@ -117,7 +129,7 @@ def simulate(potential, r_c, tau, n_steps, n_walkers=1024, B=1.0, seed=0,
                            fit_lags)[0] for b in range(n_batches)])
     D_err = D_b.std(ddof=1) / np.sqrt(n_batches)
 
-    return WalkResult(r_c=r_c, tau=tau, times=times, msd=msd, lags=lags,
+    return WalkResult(r_c=r_c, tau=tau, msd_times=msd_times, msd=msd, lags=lags,
                       tamsd=tamsd, D=D, D_err=D_err, fit_slope_loglog=slope_ll,
                       fit_window=window, n_walkers=n_walkers, n_steps=n_steps,
                       positions=np.stack([x, y]))
