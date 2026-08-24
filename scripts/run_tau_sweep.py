@@ -19,10 +19,11 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from mrdiff import GaussianRandomField, SquarePyramid, simulate, theory  # noqa: E402
+from mrdiff import (GaussianRandomField, PeriodicGaussianField,  # noqa: E402
+                    SquarePyramid, simulate, theory)
 
 
-def make_potential(name, xi, Gamma, seed, n_modes):
+def make_potential(name, xi, Gamma, seed, n_modes, L=600.0, dx=0.2):
     """Both landscapes are set up with the same |grad V| = Gamma/xi and the same
     characteristic length xi, so that T0 = xi/v_d = 1 in the units used here."""
     if name == "pyramid":
@@ -32,6 +33,11 @@ def make_potential(name, xi, Gamma, seed, n_modes):
         # rms |grad V| = sqrt(2) Gamma / xi0; scale Gamma so it matches Gamma/xi
         return GaussianRandomField(xi0=xi, Gamma=Gamma / np.sqrt(2.0),
                                    n_modes=n_modes, seed=seed)
+    if name == "periodic":
+        # same statistics, but on an explicit periodic box of side L with every
+        # grid mode inside the Gaussian envelope present
+        return PeriodicGaussianField(xi0=xi, Gamma=Gamma / np.sqrt(2.0),
+                                     L=L, dx=dx, seed=seed)
     raise ValueError(name)
 
 
@@ -43,7 +49,7 @@ def D_predict(tau, r_c, xi, t0, potential, D_scale=1.0):
     slowly than 1/tau, and the pyramid formula badly underestimates it at large
     tau -- an empirical power law calibrated on a few pilot runs is used instead.
     """
-    if potential == "random":
+    if potential in ("random", "periodic"):
         return np.maximum(r_c ** 2 / (4.0 * tau), D_scale * 0.22 * tau ** -0.22)
     return D_scale * theory.to_standard(theory.D_piecewise(tau, r_c, xi, t0))
 
@@ -69,7 +75,12 @@ def sizing(tau, r_c, xi, t0, target_cells=100.0, min_steps=2000,
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--potential", choices=["pyramid", "random"], default="pyramid")
+    p.add_argument("--potential", choices=["pyramid", "random", "periodic"],
+                   default="pyramid")
+    p.add_argument("--box-L", type=float, default=600.0,
+                   help="periodic landscape: side of the box, in units of xi0")
+    p.add_argument("--box-dx", type=float, default=0.2,
+                   help="periodic landscape: grid spacing")
     p.add_argument("--rc", type=float, default=0.1, help="cyclotron radius / xi")
     p.add_argument("--xi", type=float, default=1.0)
     p.add_argument("--Gamma", type=float, default=1.0)
@@ -151,8 +162,11 @@ def main():
         Ds = []
         for r in range(args.n_real):
             pot = make_potential(args.potential, args.xi, args.Gamma,
-                                 args.seed + 1000 * r, args.n_modes)
-            box = 4.0 * args.xi if args.potential == "pyramid" else 12.0 * args.xi
+                                 args.seed + 1000 * r, args.n_modes,
+                                 L=args.box_L, dx=args.box_dx)
+            box = (4.0 * args.xi if args.potential == "pyramid"
+                   else args.box_L if args.potential == "periodic"
+                   else 12.0 * args.xi)
             res = simulate(pot, r_c=args.rc, tau=tau, n_steps=n_steps,
                            n_walkers=n_walkers, B=args.B, seed=args.seed + k + 7 * r,
                            box=box, h=h, loop_detect=args.loop_detect,

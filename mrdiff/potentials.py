@@ -373,3 +373,127 @@ class GaussianRandomField(Potential):
         """The exact ensemble correlation function <V(0) V(r)>."""
         return self.Gamma ** 2 * np.exp(-np.asarray(r, float) ** 2
                                         / (2.0 * self.xi0 ** 2))
+
+
+class PeriodicGaussianField(Potential):
+    """A Gaussian random potential on an explicit periodic box of side ``L``.
+
+    Why this exists
+    ---------------
+    :class:`GaussianRandomField` sums N plane waves with continuously
+    distributed wavevectors.  That field never repeats (the k_j are
+    incommensurate), but N modes buy only N degrees of freedom, and two
+    artefacts follow: the longest wavelength actually present is finite (median
+    ~45 xi0 for N = 64), and the single-realisation correlation function does
+    not decay to zero but to a floor of order 1/sqrt(N).  Both bite once the
+    contours carrying the transport approach the longest wavelength, which is
+    exactly the large-tau regime.
+
+    Here the spectrum is put on the Fourier grid of a box of side ``L``, so the
+    field is *exactly* periodic with a period one controls, and every grid mode
+    inside the Gaussian envelope is present -- of order (L/xi0)^2 of them, i.e.
+    10^5 for L = 400 xi0, rather than 64.  The price is that V is tabulated
+    rather than analytic, so values between nodes come from a bicubic Hermite
+    interpolant built from V, dV/dx, dV/dy and d2V/dxdy, all evaluated exactly
+    on the grid in Fourier space.  The interpolant is C1, and the gradient
+    returned is the exact gradient *of the interpolant*, which is what contour
+    following needs: the walker stays on a level set of the function it is
+    actually being integrated in.
+
+    The power spectrum is the Fourier transform of the target correlation, so
+
+        <V(0) V(r)> = Gamma^2 exp(-r^2 / 2 xi0^2)  ,  <|grad V|^2> = 2 Gamma^2/xi0^2
+
+    exactly as for :class:`GaussianRandomField`.
+    """
+
+    _HERM = np.array([[1.0, 0.0, 0.0, 0.0],
+                      [0.0, 0.0, 1.0, 0.0],
+                      [-3.0, 3.0, -2.0, -1.0],
+                      [2.0, -2.0, 1.0, 1.0]])
+
+    def __init__(self, xi0=1.0, Gamma=1.0, L=400.0, dx=0.2, seed=0):
+        self.xi0 = float(xi0)
+        self.Gamma = float(Gamma)
+        n = int(round(L / dx))
+        n += n % 2                       # keep it even for rfft2
+        self.n = n
+        self.L = float(L)
+        self.dx = self.L / n
+        self.a = self.xi0
+
+        rng = np.random.default_rng(seed)
+        kx = 2.0 * np.pi * np.fft.fftfreq(n, d=self.dx)
+        ky = 2.0 * np.pi * np.fft.rfftfreq(n, d=self.dx)
+        KX, KY = kx[:, None], ky[None, :]
+        K2 = KX ** 2 + KY ** 2
+        # S(k) = FT of exp(-r^2/2 xi0^2); the constant drops out in the rescaling
+        amp = np.exp(-0.25 * K2 * self.xi0 ** 2)
+        spec = np.fft.rfft2(rng.standard_normal((n, n))) * amp
+
+        def back(c):
+            return np.fft.irfft2(c, s=(n, n))
+
+        self.V = back(spec)
+        s = self.V.std()
+        spec /= s                        # fix <V^2> = Gamma^2 exactly
+        spec *= self.Gamma
+        self.V = back(spec)
+        self.Vx = back(1j * KX * spec)
+        self.Vy = back(1j * KY * spec)
+        self.Vxy = back(-KX * KY * spec)
+        self.n_modes = int(np.sum(amp > 1e-8))
+
+    # -- bicubic Hermite evaluation --------------------------------------
+    def _cells(self, x, y):
+        gx = np.asarray(x, dtype=float) / self.dx
+        gy = np.asarray(y, dtype=float) / self.dx
+        i0 = np.floor(gx).astype(np.int64)
+        j0 = np.floor(gy).astype(np.int64)
+        u = gx - i0
+        v = gy - j0
+        i0 %= self.n
+        j0 %= self.n
+        i1 = (i0 + 1) % self.n
+        j1 = (j0 + 1) % self.n
+        return i0, j0, i1, j1, u, v
+
+    def _coeffs(self, i0, j0, i1, j1):
+        """The 4x4 bicubic coefficient array for each requested cell."""
+        d = self.dx
+        F = np.empty(i0.shape + (4, 4))
+        for a, (ii, jj) in enumerate([(i0, j0), (i0, j1), (i1, j0), (i1, j1)]):
+            r, c = (0, 0) if a == 0 else (0, 1) if a == 1 else (1, 0) if a == 2 else (1, 1)
+            F[..., r, c] = self.V[ii, jj]
+            F[..., r, c + 2] = self.Vy[ii, jj] * d
+            F[..., r + 2, c] = self.Vx[ii, jj] * d
+            F[..., r + 2, c + 2] = self.Vxy[ii, jj] * d * d
+        M = self._HERM
+        return np.einsum("ab,nbc,dc->nad", M, F, M)
+
+    def value_grad(self, x, y):
+        i0, j0, i1, j1, u, v = self._cells(x, y)
+        A = self._coeffs(i0, j0, i1, j1)
+        U = np.stack([np.ones_like(u), u, u ** 2, u ** 3], axis=-1)
+        Vv = np.stack([np.ones_like(v), v, v ** 2, v ** 3], axis=-1)
+        dU = np.stack([np.zeros_like(u), np.ones_like(u), 2 * u, 3 * u ** 2], -1)
+        dV = np.stack([np.zeros_like(v), np.ones_like(v), 2 * v, 3 * v ** 2], -1)
+        val = np.einsum("nij,ni,nj->n", A, U, Vv)
+        gx = np.einsum("nij,ni,nj->n", A, dU, Vv) / self.dx
+        gy = np.einsum("nij,ni,nj->n", A, U, dV) / self.dx
+        return val, gx, gy
+
+    def value(self, x, y):
+        return self.value_grad(x, y)[0]
+
+    def grad(self, x, y):
+        _, gx, gy = self.value_grad(x, y)
+        return gx, gy
+
+    @property
+    def rms_grad(self):
+        return np.sqrt(2.0) * self.Gamma / self.xi0
+
+    def correlation(self, r):
+        return self.Gamma ** 2 * np.exp(-np.asarray(r, float) ** 2
+                                        / (2.0 * self.xi0 ** 2))
