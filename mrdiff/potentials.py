@@ -88,7 +88,7 @@ class Potential:
             rem[ia] -= dt
 
     def orbit_period(self, x, y, B=1.0, h=0.125, max_time=np.inf,
-                     r_in=1.5, r_out=6.0):
+                     r_in=1.5, r_out=6.0, cos_tol=0.5):
         """Time for each guiding centre to come back round its closed contour.
 
         The walker is integrated from its starting point until it has left a
@@ -110,6 +110,9 @@ class Potential:
         rx, ry = x.copy(), y.copy()
         gx, gy = self.grad(x, y)
         v0 = np.hypot(gx, gy) / B
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ux0 = np.where(v0 > 0, -gy / B / np.where(v0 > 0, v0, 1.0), 0.0)
+            uy0 = np.where(v0 > 0, gx / B / np.where(v0 > 0, v0, 1.0), 0.0)
         rin = np.maximum(r_in * v0 * h, 1e-14)
         rout = r_out * v0 * h
         limit = np.array(np.broadcast_to(max_time, x.shape), dtype=float)
@@ -130,6 +133,15 @@ class Potential:
             close = left[ia] & (d < rin[ia])
             if close.any():
                 ic = ia[close]
+                gxc, gyc = self.grad(x[ic], y[ic])
+                vx, vy = -gyc / B, gxc / B
+                v2 = vx * vx + vy * vy
+                # reject a close pass that is not travelling the original way
+                vmag = np.sqrt(np.where(v2 > 0, v2, 1.0))
+                aligned = (vx * ux0[ic] + vy * uy0[ic]) / vmag >= cos_tol
+                ic = ic[aligned]
+                if ic.size == 0:
+                    continue
                 gxc, gyc = self.grad(x[ic], y[ic])
                 vx, vy = -gyc / B, gxc / B
                 v2 = vx * vx + vy * vy
