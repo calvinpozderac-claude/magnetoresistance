@@ -132,6 +132,20 @@ def main():
     n_steps_a = np.zeros(taus.size, dtype=int)
     n_walk_a = np.zeros(taus.size, dtype=int)
 
+    def save(path, upto):
+        """Write the sweep after every point, so a run that is interrupted
+        still leaves usable data behind."""
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        sl = slice(0, upto)
+        np.savez(path, tau=taus[sl], D=D[sl], D_err=D_err[sl],
+                 loglog_slope=ll[sl], r_c=args.rc, xi=args.xi, Gamma=args.Gamma,
+                 B=args.B, T0=t0, potential=args.potential,
+                 collisions=args.collisions, n_steps=n_steps_a[sl],
+                 n_walkers=n_walk_a[sl], n_modes=args.n_modes,
+                 n_real=args.n_real, substep_time=args.substep_time,
+                 box_L=args.box_L,
+                 fixed_time=(args.fixed_time if args.fixed_time else 0.0))
+
     print(f"{args.potential}: xi={args.xi} Gamma={args.Gamma} B={args.B} "
           f"| T0={t0:g} | r_c={args.rc} | collisions={args.collisions} "
           f"| realisations={args.n_real}")
@@ -181,8 +195,10 @@ def main():
         print(f"{tau:10.4g} {tau / t0:9.4g} {n_steps:8d} {n_walkers:7d} {n_sub:5.4g} "
               f"{D[k]:11.5g} {D_err[k]:9.3g} {ll[k]:6.3f} {time.time() - tk:6.1f}")
     print(f"total {time.time() - t_all:.1f} s")
+    print("wrote", out)
 
-    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+
+def _unused(out, taus, D, D_err, ll, args, t0, n_steps_a, n_walk_a):
     np.savez(out, tau=taus, D=D, D_err=D_err, loglog_slope=ll, r_c=args.rc,
              xi=args.xi, Gamma=args.Gamma, B=args.B, T0=t0,
              potential=args.potential, collisions=args.collisions,

@@ -424,7 +424,8 @@ class PeriodicGaussianField(Potential):
                       [-3.0, 3.0, -2.0, -1.0],
                       [2.0, -2.0, 1.0, 1.0]])
 
-    def __init__(self, xi0=1.0, Gamma=1.0, L=400.0, dx=0.2, seed=0):
+    def __init__(self, xi0=1.0, Gamma=1.0, L=400.0, dx=0.2, seed=0,
+                 precompute=True, chunk=128):
         self.xi0 = float(xi0)
         self.Gamma = float(Gamma)
         n = int(round(L / dx))
@@ -455,6 +456,35 @@ class PeriodicGaussianField(Potential):
         self.Vy = back(1j * KY * spec)
         self.Vxy = back(-KX * KY * spec)
         self.n_modes = int(np.sum(amp > 1e-8))
+        self.A = self._precompute(chunk) if precompute else None
+
+    def _precompute(self, chunk):
+        """Bicubic coefficients for every cell, as (n, n, 16) float32.
+
+        Building them once turns each evaluation into a single gather plus a
+        Horner evaluation, instead of sixteen gathers and two 4x4 products per
+        call.  That is the whole cost of the landscape at large tau, where a
+        drift is thousands of substeps."""
+        n, d = self.n, self.dx
+        A = np.empty((n, n, 16), dtype=np.float32)
+        M = self._HERM
+        jj0 = np.arange(n)
+        jj1 = (jj0 + 1) % n
+        for lo in range(0, n, chunk):
+            hi = min(lo + chunk, n)
+            i0 = np.arange(lo, hi)
+            i1 = (i0 + 1) % n
+            F = np.empty((hi - lo, n, 4, 4))
+            for (ii, jj), (r, c) in (((i0, jj0), (0, 0)), ((i0, jj1), (0, 1)),
+                                     ((i1, jj0), (1, 0)), ((i1, jj1), (1, 1))):
+                I, J = ii[:, None], jj[None, :]
+                F[:, :, r, c] = self.V[I, J]
+                F[:, :, r, c + 2] = self.Vy[I, J] * d
+                F[:, :, r + 2, c] = self.Vx[I, J] * d
+                F[:, :, r + 2, c + 2] = self.Vxy[I, J] * d * d
+            A[lo:hi] = np.einsum("ab,ijbc,dc->ijad", M, F, M).reshape(
+                hi - lo, n, 16).astype(np.float32)
+        return A
 
     # -- bicubic Hermite evaluation --------------------------------------
     def _cells(self, x, y):
@@ -485,6 +515,18 @@ class PeriodicGaussianField(Potential):
 
     def value_grad(self, x, y):
         i0, j0, i1, j1, u, v = self._cells(x, y)
+        if self.A is not None:
+            a = self.A[i0, j0]                      # (n, 16), one gather
+            cu, du = [], []
+            for i in range(4):
+                p0, p1, p2, p3 = (a[:, 4 * i], a[:, 4 * i + 1],
+                                  a[:, 4 * i + 2], a[:, 4 * i + 3])
+                cu.append(p0 + v * (p1 + v * (p2 + v * p3)))
+                du.append(p1 + v * (2.0 * p2 + 3.0 * v * p3))
+            val = cu[0] + u * (cu[1] + u * (cu[2] + u * cu[3]))
+            gx = (cu[1] + u * (2.0 * cu[2] + 3.0 * u * cu[3])) / self.dx
+            gy = (du[0] + u * (du[1] + u * (du[2] + u * du[3]))) / self.dx
+            return val, gx, gy
         A = self._coeffs(i0, j0, i1, j1)
         U = np.stack([np.ones_like(u), u, u ** 2, u ** 3], axis=-1)
         Vv = np.stack([np.ones_like(v), v, v ** 2, v ** 3], axis=-1)
