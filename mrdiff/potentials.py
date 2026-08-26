@@ -425,7 +425,7 @@ class PeriodicGaussianField(Potential):
                       [2.0, -2.0, 1.0, 1.0]])
 
     def __init__(self, xi0=1.0, Gamma=1.0, L=400.0, dx=0.2, seed=0,
-                 precompute=True, chunk=128):
+                 precompute=True, chunk=128, ring_average=0.0):
         self.xi0 = float(xi0)
         self.Gamma = float(Gamma)
         n = int(round(L / dx))
@@ -451,6 +451,20 @@ class PeriodicGaussianField(Potential):
         s = self.V.std()
         spec /= s                        # fix <V^2> = Gamma^2 exactly
         spec *= self.Gamma
+
+        # Guiding-centre (orbit) averaging.  The physical guiding centre follows
+        # contours of V averaged around the cyclotron orbit,
+        #     V'(r) = (1/2pi) int_0^2pi V(r + r_c u(theta)) dtheta,
+        # and ring-averaging a plane wave multiplies it by a Bessel factor,
+        #     (1/2pi) int e^{i k.(r + r_c u)} dtheta = e^{i k.r} J_0(k r_c),
+        # so V' is the same field with every mode scaled by J_0(|k| r_c).
+        # Exact, and no quadrature.  This is not a smoothing: J_0 changes sign,
+        # so modes past k r_c = 2.405 come back inverted and those sitting on a
+        # zero of J_0 are annihilated outright.
+        self.ring_average = float(ring_average)
+        if self.ring_average > 0:
+            from scipy.special import j0
+            spec = spec * j0(np.sqrt(K2) * self.ring_average)
         self.V = back(spec)
         self.Vx = back(1j * KX * spec)
         self.Vy = back(1j * KY * spec)
