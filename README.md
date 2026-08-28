@@ -244,6 +244,101 @@ The percolation scaling quoted above uses only the standard 2-D exponents (hull
 dimension 7/4, `nu = 4/3`); the notes' own section-6 derivation is still excluded
 from `mrdiff/theory.py` on the grounds that its argument is unsound.
 
+## Mapping the regimes: a sweep over the (r_c, tau) plane
+
+`scripts/run_grid.py` measures `D` on a grid of `(r_c, tau)`, one cell at a
+time, saving after every cell so a run can be interrupted and resumed. The map
+below merges five such runs on one fixed landscape (`L = 400 xi_0`, `xi_0 = 1`,
+`Gamma = 1/sqrt(2)` so `v_0 = 1`), 75 usable cells covering
+
+```
+r_c  = 0.05 ... 16 xi_0        (2.5 decades)
+tau  = 0.03 ... 1000 xi_0/v_0  (4.5 decades)
+```
+
+with 192 walkers per cell (768 for the interior), Poissonian collisions and
+loop detection. Six cells are dropped because their MSD is still sub-diffusive
+in the fit window (`|d ln MSD/d ln t - 1| > 0.15`), all of them in the
+small-`r_c`, large-`tau` corner where randomising the contour level takes many
+kicks.
+
+    python scripts/run_grid.py --out data/grid_D.npz
+    python scripts/plot_phase_diagram.py --data data/grid_*.npz
+
+### The boundaries come out of the data without fitting
+
+Setting the three predicted laws equal pairwise gives, with `xi_0 = v_0 = 1`,
+
+| boundary | locus | |
+|---|---|---|
+| Case 1 / Case 2 | `r_c = sqrt(v_0 xi_0 tau)` | `u = r_c^2/(v_0 xi_0 tau) = 1` |
+| Case 2 / Case 3 | `r_c = xi_0 (xi_0/v_0 tau)^(3/7)` | `X = r_c (v_0 tau/xi_0)^(3/7)/xi_0 = 1` |
+
+which cross at the triple point `(tau, r_c) = (1, 1)`. Both are visible
+directly as kinks in a one-variable collapse:
+
+* Cases 1 and 2 both make `D` a function of `u = r_c^2/(v_0 xi_0 tau)` alone.
+  Every non-Case-3 cell collapses onto one curve over four decades in `u`, with
+  a sharp break at `u = 1`.
+* Cases 2 and 3 both make `D (v_0 tau/xi_0)^(3/7)` a function of
+  `X = r_c (v_0 tau/xi_0)^(3/7)` alone. Every non-Case-1 cell collapses over
+  four decades in `X`, with a break at `X = 1`.
+
+Nothing in either collapse is fitted: the scaling variables and the location of
+the kinks are the prediction.
+
+### Exponents
+
+Joint fits of `ln D = a ln(tau) + b ln(r_c) + const` over the cells that stay at
+least a factor `e` away from both boundaries of their regime:
+
+| regime | `a` measured | predicted | `b` measured | predicted |
+|---|---|---|---|---|
+| Case 1 | `-0.964 +- 0.009` | `-1` | `+1.958 +- 0.023` | `+2` |
+| Case 2 | `-0.185 +- 0.008` | `-3/13 = -0.231` | `+0.382 +- 0.028` | `+6/13 = +0.462` |
+| Case 3 | `-0.350 +- 0.016` | `-3/7 = -0.429` | `+0.219 +- 0.022` | `0` |
+
+Case 1 is exact to a couple of percent. Case 2 is 20% shallow in both exponents
+but with the ratio `b/a = -2.06` pinned to `-2`, which is the real content of
+the regime: `D` depends on `r_c` and `tau` only through `r_c^2/tau`. The
+collapse fit, which uses all 42 non-Case-3 cells rather than the deep-interior
+subset, gives `0.206 +- 0.006` against `3/13 = 0.231`, and a dedicated `tau`
+sweep at fixed `r_c = 0.1` gave `-0.232 +- 0.009` over 2.7 decades — so `-3/13`
+is right and the deep-interior subset here is biased by sitting at small `tau`,
+where `v_0 tau` is not yet large compared with `xi_0`.
+
+### Case 3 is approached, not reached
+
+Case 3 is the only place where the map disagrees with the prediction at the
+level of an exponent, and both of its exponents drift toward the predicted
+values as the cells move deeper into the regime:
+
+| cells kept | `d ln D/d ln tau` | `d ln D/d ln r_c` |
+|---|---|---|
+| margin `> e^0.0` | `-0.351 +- 0.022` | `+0.285 +- 0.028` |
+| margin `> e^0.7` | `-0.350 +- 0.016` | `+0.219 +- 0.022` |
+| margin `> e^1.2` | `-0.353 +- 0.026` | `+0.201 +- 0.035` |
+| margin `> e^1.8` | `-0.341 +- 0.039` | `+0.100 +- 0.066` |
+| margin `> e^0.7`, `tau >= 300` | `-0.410 +- 0.066` | `+0.223 +- 0.034` |
+
+The `r_c` exponent falls monotonically toward `0` as the margin grows, and is
+consistent with `0` at the deepest cut. The `tau` exponent moves toward `-3/7`
+only when the small-`tau` cells are dropped; row by row at fixed `r_c` it
+steepens with `r_c` as well — `-0.326 +- 0.057` at `r_c = 0.5`, `-0.342 +-
+0.028` at `r_c = 1`, `-0.420 +- 0.025` at `r_c = 2` — matching the
+`-0.427 +- 0.021` found earlier from a dedicated sweep at `r_c = 2` over
+`tau = 100 ... 1000`.
+
+This is the same finite-size effect already measured directly on the contour
+statistics: `-3/7` follows from `(2 - a)/d_h - 1` with the tail exponent
+`a = 1` and `d_h = 7/4`, and the *measured* `a` only creeps up to `0.93` on the
+largest box, while grid-labelled contours give `d_h = 1.633 +- 0.009` rather
+than `1.75`. Putting the measured values in gives `-0.39`, between the observed
+`-0.35` and the asymptotic `-0.43`. The regime is real and its trend is right;
+the accessible `tau` is not large enough to sit on the asymptote.
+
+![phase diagram](figures/phase_diagram.png)
+
 ## Modelling choices worth knowing about
 
 * **The hop.** As specified, a collision moves the guiding centre by exactly

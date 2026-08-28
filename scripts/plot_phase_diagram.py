@@ -43,6 +43,7 @@ def merge(paths):
     tau = np.unique(np.concatenate([g["tau"] for g in grids]))
     D = np.full((rc.size, tau.size), np.nan)
     E = np.full((rc.size, tau.size), np.nan)
+    LL = np.full((rc.size, tau.size), np.nan)
     done = np.zeros(D.shape, dtype=bool)
     for g in grids:
         ii = np.searchsorted(rc, g["r_c"])
@@ -50,8 +51,9 @@ def merge(paths):
         for a, i in enumerate(ii):
             for b, j in enumerate(jj):
                 if g["done"][a, b]:
-                    D[i, j], E[i, j], done[i, j] = g["D"][a, b], g["D_err"][a, b], True
-    return rc, tau, D, E, done
+                    D[i, j], E[i, j] = g["D"][a, b], g["D_err"][a, b]
+                    LL[i, j], done[i, j] = g["loglog"][a, b], True
+    return rc, tau, D, E, LL, done
 
 
 def window_slope(logD, logx, axis, half=1):
@@ -108,13 +110,22 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", nargs="+", default=["data/grid_D.npz"])
     p.add_argument("--out", default="figures/phase_diagram.png")
+    p.add_argument("--ll-tol", type=float, default=0.15,
+                   help="drop cells whose MSD log-log slope differs from 1 by more")
+    p.add_argument("--margin", type=float, default=0.7,
+                   help="ln-distance a cell must keep from both boundaries to "
+                        "count as 'deep' inside a regime")
     args = p.parse_args()
 
-    rc, tau, D, E, done = merge(args.data)
+    rc, tau, D, E, LL, done = merge(args.data)
+    # a cell is only usable if its MSD really is diffusive over the fit window
+    bad = done & (np.abs(LL - 1.0) > args.ll_tol)
+    done = done & ~bad
     D = np.where(done, D, np.nan)
     E = np.where(done, E, np.nan)
-    print(f"{int(done.sum())}/{done.size} cells present "
-          f"({rc.size} r_c x {tau.size} tau)")
+    print(f"{int(done.sum())}/{done.size} cells usable "
+          f"({rc.size} r_c x {tau.size} tau); "
+          f"{int(bad.sum())} dropped for |MSD loglog slope - 1| > {args.ll_tol}")
 
     s_tau = window_slope(np.log(D), np.log(tau), axis=1)
     s_rc = window_slope(np.log(D), np.log(rc), axis=0)
@@ -273,6 +284,54 @@ def main():
             print(f"           <d lnD/d ln r_c> = {v.mean():+.3f} "
                   f"+- {v.std(ddof=1)/np.sqrt(v.size):.3f}  "
                   f"(n={v.size}, predicted {pr:+.3f})")
+
+    # ---- joint fits well inside each regime -------------------------------
+    ok = np.isfinite(D)
+    m1 = np.log(np.sqrt(T) / R)     # ln-distance below r_c = sqrt(tau)
+    m2 = np.log(R * T ** (3 / 7))   # ln-distance above r_c = tau^(-3/7)
+    g = args.margin
+    print(f"\njoint fit  ln D = a ln(tau) + b ln(r_c) + const,  restricted to "
+          f"cells at least e^{g:g} away from both boundaries of their regime:")
+    for c, sel, pa, pb in ((1, ok & (-m1 > g), -1.0, 2.0),
+                           (2, ok & (m1 > g) & (-m2 > g), -3 / 13, 6 / 13),
+                           (3, ok & (m1 > g) & (m2 > g), -3 / 7, 0.0)):
+        f = joint_fit(T, R, D, sel)
+        if f is None:
+            print(f"  Case {c}: only {int(sel.sum())} usable cells")
+            continue
+        n, a, ea, b, eb = f
+        print(f"  Case {c}: n={n:2d}   a = {a:+.3f} +- {ea:.3f} (pred {pa:+.3f})"
+              f"   b = {b:+.3f} +- {eb:.3f} (pred {pb:+.3f})")
+
+    # how the Case-3 exponents converge as the cells move deeper in
+    print("\nCase 3 approach to the asymptote (both margins > cut):")
+    for cut in (0.0, 0.7, 1.2, 1.8):
+        f = joint_fit(T, R, D, ok & (m1 > cut) & (m2 > cut))
+        if f is None:
+            continue
+        n, a, ea, b, eb = f
+        print(f"  margin > {cut:.1f}:  n={n:2d}   tau^({a:+.3f}+-{ea:.3f})"
+              f"  r_c^({b:+.3f}+-{eb:.3f})    [predicted -0.429, 0]")
+    print("\nCase 3 vs the smallest tau retained:")
+    for tmin in (1.0, 30.0, 100.0, 300.0):
+        f = joint_fit(T, R, D, ok & (m1 > g) & (m2 > g) & (T >= tmin))
+        if f is None:
+            continue
+        n, a, ea, b, eb = f
+        print(f"  tau >= {tmin:5g}:  n={n:2d}   tau^({a:+.3f}+-{ea:.3f})"
+              f"  r_c^({b:+.3f}+-{eb:.3f})")
+
+
+def joint_fit(T, R, D, sel):
+    """Least-squares  ln D = a ln tau + b ln r_c + c  over the selected cells."""
+    n = int(sel.sum())
+    if n < 4:
+        return None
+    X = np.c_[np.log(T[sel]), np.log(R[sel]), np.ones(n)]
+    beta = np.linalg.lstsq(X, np.log(D[sel]), rcond=None)[0]
+    res = np.log(D[sel]) - X @ beta
+    cov = np.linalg.inv(X.T @ X) * (res ** 2).sum() / (n - 3)
+    return n, beta[0], np.sqrt(cov[0, 0]), beta[1], np.sqrt(cov[1, 1])
 
 
 if __name__ == "__main__":
