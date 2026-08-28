@@ -52,14 +52,30 @@ def local_slope(logD, logx, axis):
     return out
 
 
+def merge(paths):
+    """Union several run_grid.py outputs onto a common (r_c, tau) grid."""
+    grids = [np.load(q) for q in paths]
+    rc = np.unique(np.concatenate([g["r_c"] for g in grids]))
+    tau = np.unique(np.concatenate([g["tau"] for g in grids]))
+    D = np.full((rc.size, tau.size), np.nan)
+    done = np.zeros(D.shape, dtype=bool)
+    for g in grids:
+        ii = np.searchsorted(rc, g["r_c"])
+        jj = np.searchsorted(tau, g["tau"])
+        for a, i in enumerate(ii):
+            for b, j in enumerate(jj):
+                if g["done"][a, b]:
+                    D[i, j], done[i, j] = g["D"][a, b], True
+    return rc, tau, D, done
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--data", default="data/grid_D.npz")
+    p.add_argument("--data", nargs="+", default=["data/grid_D.npz"])
     p.add_argument("--out", default="figures/phase_diagram.png")
     args = p.parse_args()
 
-    z = np.load(args.data)
-    rc, tau, D, done = z["r_c"], z["tau"], z["D"], z["done"]
+    rc, tau, D, done = merge(args.data)
     D = np.where(done, D, np.nan)
     print(f"{int(done.sum())}/{done.size} cells present")
 
