@@ -173,6 +173,18 @@ def main():
         print(f"{r:9.3g} " + "".join(
             ("       ---" if not np.isfinite(s_tau[i, j]) else f"{s_tau[i,j]:10.3f}")
             for j in range(tau.size)))
+    # predicted regime from the boundaries alone (xi0 = v0 = 1)
+    R, T = np.meshgrid(rc, tau, indexing="ij")
+    pred = np.where(R > np.sqrt(T), 1, np.where(R < T ** (-3.0 / 7.0), 2, 3))
+    print("\npredicted regime (boundaries)   /   nearest regime (measured slope)")
+    print("r_c \\ tau " + "".join(f"{t:>10.3g}" for t in tau))
+    for i, r in enumerate(rc):
+        row = []
+        for j in range(tau.size):
+            m = "-" if not np.isfinite(cls[i, j]) else str(int(cls[i, j]))
+            row.append(f"{pred[i,j]:>7d}/{m}")
+        print(f"{r:9.3g} " + "".join(f"{c:>10s}" for c in row))
+
     print("\nd lnD / d ln r_c")
     print("r_c \\ tau " + "".join(f"{t:>10.3g}" for t in tau))
     for i, r in enumerate(rc):
