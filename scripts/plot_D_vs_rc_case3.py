@@ -144,8 +144,8 @@ def main():
         bx.plot(xx, amp * xx ** b, style, lw=1.7, zorder=6,
                 label=f"${tag}$:  $r_c^{{{b:+.3f}\\pm{eb:.3f}}}$")
     bx.axvline(args.split, color="0.35", lw=1.2, ls=":")
-    bx.text(args.split * 1.06, bx.get_ylim()[0], r" $r_c=\xi_0$", fontsize=9,
-            color="0.3", va="bottom")
+    bx.text(args.split * 1.07, 0.04, r"$r_c=\xi_0$", fontsize=9, color="0.3",
+            va="bottom", ha="left", transform=bx.get_xaxis_transform())
     b, eb, amp = wpowerfit(allx, ally, alle)
     bx.axhline(np.exp(np.mean(np.log(ally[lowm]))), color="0.45", ls="--", lw=1.2,
                label=r"constant (Case 3 prediction, $r_c^0$)")

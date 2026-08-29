@@ -339,6 +339,49 @@ the accessible `tau` is not large enough to sit on the asymptote.
 
 ![phase diagram](figures/phase_diagram.png)
 
+### `D` as a function of `r_c` inside regime 3
+
+`scripts/plot_D_vs_rc_case3.py` cuts the map the other way: `D(r_c)` at fixed
+`tau`, keeping only the points inside that `tau`'s regime-3 window
+`tau^(-3/7) < r_c < sqrt(tau)`. The window opens at the triple point and widens
+as `tau^(13/14)`, so large `tau` gives the long lever arm — at `tau = 1000` it
+spans `0.05 ... 32 xi_0`. 43 points survive, from `tau = 10` to `1000`.
+
+    python scripts/plot_D_vs_rc_case3.py --data data/grid*.npz
+
+Dividing out the predicted `tau^(-3/7)` collapses all five `tau` curves onto one
+another, so the `tau` scaling is doing its job. But the collapsed curve is not
+the flat line Case 3 predicts. It **breaks at `r_c ~ xi_0`**, which is neither
+of the two predicted boundaries:
+
+| branch | n | `d ln D/d ln r_c` | `<D tau^(3/7)>` |
+|---|---|---|---|
+| `r_c <= xi_0` | 19 | `+0.249 +- 0.062` | 0.875 |
+| `r_c >= 2 xi_0` | 21 | `+0.495 +- 0.047` | 1.594 |
+
+Below `xi_0` the exponent is still drifting to zero with `tau` — `+0.377 +-
+0.063` at `tau = 30`, `+0.269 +- 0.038` at `tau = 100`, `+0.112 +- 0.069` at
+`tau = 300` — i.e. consistent with the predicted `r_c^0` by `tau = 300`. Above
+`xi_0` it is not converging on anything near zero: it sits at `r_c^(1/2)`, ten
+standard deviations from flat, and the same split shows up as the margin cut in
+the phase-diagram fit (`+0.372` over the whole regime, `+0.169 +- 0.060` once
+only deep-interior cells are kept, since the deep interior is mostly `r_c` of
+order `xi_0`).
+
+The break is where the un-averaged model is expected to fail. Every run here
+uses the bare landscape — `run_grid.py` builds `PeriodicGaussianField` without
+`ring_average`, so the same `V` is used at `r_c = 0.05` and at `r_c = 16`. A
+drift-and-kick walk on a bare landscape has nothing that makes a kick longer
+than the correlation length irrelevant: once `r_c >> xi_0` every kick lands on a
+fully uncorrelated contour, so transport keeps growing with `r_c`. Orbit
+averaging is exactly the missing ingredient — it renormalises the landscape's
+correlation length towards `r_c` and shrinks the amplitude as
+`Gamma_eff = sqrt(exp(-r_c^2) I_0(r_c^2))`. So Case 3's `r_c`-independence
+should be read as a statement about the `r_c <~ xi_0` part of its window, and
+the `r_c >~ xi_0` branch measures the cost of ignoring the averaging.
+
+![D vs r_c in regime 3](figures/D_vs_rc_case3.png)
+
 ## Modelling choices worth knowing about
 
 * **The hop.** As specified, a collision moves the guiding centre by exactly
