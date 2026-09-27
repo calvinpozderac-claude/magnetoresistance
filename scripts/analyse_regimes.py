@@ -183,10 +183,15 @@ def main():
             sel = ((lab == "2") | (lab == "3a")) & (d["rho"] <= 1.0)
             x, y, e = d["X"][sel], d["Y"][sel], d["Ey"][sel]
             groups = [("2", lab[sel] == "2"), ("3a", lab[sel] == "3a")]
-        else:                                  # regimes 3a and 3b
+        elif which == "C":                     # regimes 3a and 3b
             sel = ((lab == "3a") | (lab == "3b")) & (d["X"] >= 1.0)
             x, y, e = d["rho"][sel], d["Y"][sel], d["Ey"][sel]
             groups = [("3a", lab[sel] == "3a"), ("3b", lab[sel] == "3b")]
+        else:                                  # regime 3b on its own variable
+            sel = lab == "3b"
+            x = d["rho"][sel] / d["T"][sel]
+            y, e = d["Dh"][sel], d["Eh"][sel]
+            groups = [("3b", np.ones(int(sel.sum()), dtype=bool))]
         ax.errorbar(x, y, yerr=e, fmt=mk, color=col, ms=5, lw=0, elinewidth=0.9,
                     capsize=1.6, alpha=0.85, zorder=3,
                     label=f"{lab_prefix}{int(sel.sum())} cells")
@@ -198,19 +203,22 @@ def main():
 
     guide = {"A": [("1", 1.0), ("2", 3 / 13)],
              "B": [("2", 6 / 13), ("3a", 0.0)],
-             "C": [("3a", 0.0), ("3b", 3 / 7)]}
+             "C": [("3a", 0.0), ("3b", 3 / 7)],
+             "D": [("3b", 3 / 7)]}
     axis = {"A": (r"$u=\rho^2/T$", r"$\hat D=D/v_{\rm eff}\xi_{\rm eff}$",
                   "A  regimes 1 + 2"),
             "B": (r"$X=\rho\,T^{3/7}$", r"$\hat D\,T^{3/7}$",
                   r"B  regimes 2 + 3a   ($\rho\leq1$)"),
             "C": (r"$\rho=r_c/\xi_{\rm eff}$", r"$\hat D\,T^{3/7}$",
-                  r"C  regimes 3a + 3b   ($X\geq1$)")}
+                  r"C  regimes 3a + 3b   ($X\geq1$)"),
+            "D": (r"$\rho/T=r_c/v_{\rm eff}\tau$", r"$\hat D$",
+                  r"D  regime 3b alone, one variable")}
 
     # figure 1: the two models overlaid on the same three collapses
     _nullf, _null = plt.subplots()
-    fig, axes = plt.subplots(1, 3, figsize=(15.2, 4.9))
-    for k, which in enumerate("ABC"):
-        ax = axes[k]
+    fig, axes = plt.subplots(2, 2, figsize=(11.6, 9.4))
+    for k, which in enumerate("ABCD"):
+        ax = axes.flat[k]
         for name, d, col, mk in sets:
             x, y, res = panel(ax, which, d, col, mk, lab_prefix=f"{name}: ")
             for g, (b, eb, amp) in res.items():
@@ -225,6 +233,8 @@ def main():
             side = (xr <= 1.0) if g in ("2",) and which != "A" else (xr >= 1.0)
             if which == "A":
                 side = xr >= 1.0 if g == "1" else xr <= 1.0
+            if which == "D":
+                side = np.ones(xr.size, dtype=bool)
             if side.sum() < 2:
                 continue
             anchor = np.exp(np.median(np.log(yr[side]) - sl * np.log(xr[side])))
@@ -233,7 +243,8 @@ def main():
             ax.annotate(f"slope {sl:.3f}" if sl else "slope 0",
                         (xs[-1], anchor * xs[-1] ** sl), fontsize=8,
                         textcoords="offset points", xytext=(4, -2))
-        ax.axvline(1.0, color="0.55", ls=":", lw=1.2)
+        if which != "D":
+            ax.axvline(1.0, color="0.55", ls=":", lw=1.2)
         xl, yl, ti = axis[which]
         ax.set_xlabel(xl); ax.set_ylabel(yl); ax.set_title(ti, fontsize=11)
         ax.legend(fontsize=8, loc="upper left")
@@ -248,7 +259,7 @@ def main():
 
     # ---------------- report the collapse fits ----------------------------
     print("\ncollapse branch fits (weighted power laws)")
-    for which in "ABC":
+    for which in "ABCD":
         xl, _, ti = axis[which]
         print(f"  {ti}   x = {xl}")
         for name, d, col, mk in sets:
@@ -260,7 +271,8 @@ def main():
                     b, eb, _ = res[g]
                     pb = {"A": {"1": 1.0, "2": 3 / 13},
                           "B": {"2": 6 / 13, "3a": 0.0},
-                          "C": {"3a": 0.0, "3b": 3 / 7}}[which].get(g)
+                          "C": {"3a": 0.0, "3b": 3 / 7},
+                          "D": {"3b": 3 / 7}}[which].get(g)
                     ps = "--" if pb is None else f"{pb:+.3f}"
                     print(f"     {name:<16} regime {g:<3} slope "
                           f"{b:+.3f} +- {eb:.3f}   predicted {ps}")
