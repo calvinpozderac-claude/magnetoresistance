@@ -40,7 +40,7 @@ COL = {"1": "#3b6fb6", "2": "#e0a03c", "3a": "#5aa469", "3b": "#b1453f"}
 NAME = {"1": "1  free walk  $D=r_c^2/4\\tau$",
         "2": "2  $D\\sim(r_c^2/\\tau)^{3/13}$",
         "3a": "3a  $D\\sim\\tau^{-3/7}$, $r_c$-independent",
-        "3b": "3b  $D\\sim r_c^{1/2}\\tau^{-3/7}$"}
+        "3b": "3b  $D\\sim r_c^{3/7}\\tau^{-3/7}$"}
 
 
 def main():

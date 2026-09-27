@@ -382,6 +382,155 @@ the `r_c >~ xi_0` branch measures the cost of ignoring the averaging.
 
 ![D vs r_c in regime 3](figures/D_vs_rc_case3.png)
 
+## All regimes, raw and orbit-averaged
+
+The two landscapes are compared by reducing every cell to the landscape's *own*
+units.  With `Gamma_eff`, `v_eff = rms|grad V'|` and
+`xi_eff = sqrt(2) Gamma_eff / v_eff` measured from the field itself,
+
+    rho = r_c / xi_eff      T = v_eff tau / xi_eff      Dhat = D / (v_eff xi_eff)
+
+    python scripts/measure_avg_landscape.py     # what averaging does to the field
+    python scripts/run_grid.py --orbit-average  # ... --rc ... --tau ...
+    python scripts/analyse_regimes.py           # the four collapses + all fits
+    python scripts/plot_phase_both.py           # both phase diagrams, lab units
+
+89 raw cells (`rho` 0.05...16, `T` 0.03...990) and 75 averaged cells
+(`rho` 0.12...11, `T` 0.006...980).
+
+### What orbit averaging actually does
+
+`V'` has every Fourier mode of `V` scaled by `J_0(|k| r_c)`, so for
+`<V(0)V(r)> = Gamma^2 exp(-r^2/2 xi0^2)` the averaged field is still Gaussian
+with spectrum `S(k) J_0(k r_c)^2`.  Measured against the real periodic field, the
+exact Bessel integrals hold to better than 1% over `r_c = 0.125 ... 32 xi_0`:
+
+| | small `r_c` | large `r_c` |
+|---|---|---|
+| `Gamma_eff/Gamma` | `sqrt(exp(-x) I_0(x))`, `x=(r_c/xi_0)^2` | `(2 pi)^(-1/4) (xi_0/r_c)^(1/2)` |
+| `v_eff/v_0` | -- | `(2 pi)^(-1/4) 2^(-1/2) (xi_0/r_c)^(1/2)` |
+| `xi_eff` | `xi_0` | **`sqrt(2) xi_0`** (measured 1.4173 at `r_c=16`) |
+
+So averaging **weakens** the landscape (`v_eff ~ r_c^(-1/2)`) but does **not**
+coarsen it: `xi_eff` overshoots to 1.6 near `r_c ~ 1.5 xi_0` and then saturates
+at `sqrt(2) xi_0`.  Everything else follows from that one fact.
+
+![landscape renormalisation](figures/avg_landscape.png)
+
+### Four regimes, not three
+
+The `(r_c, tau)` plane needs four regions.  Three are the notes'; the fourth,
+3b, is what happens once the kick is longer than the correlation length.
+
+| regime | window | law | how it is a single curve |
+|---|---|---|---|
+| 1 free walk | `rho > sqrt(T)` | `D = r_c^2/4tau` | `Dhat = u/4`, `u = rho^2/T` |
+| 2 Levy contours | `X < 1` | `Dhat ~ (rho^2/T)^(3/13)` | `Dhat = f(u)` |
+| 3a contour-limited | `X > 1`, `rho < 1` | `Dhat ~ T^(-3/7)` | `Dhat T^(3/7) = const` |
+| 3b contour-limited | `X > 1`, `rho > 1` | `Dhat ~ (rho/T)^(3/7)` | `Dhat = g(r_c/v_eff tau)` |
+
+with `X = rho T^(3/7)`.  Three collapses cover the plane: **A** `Dhat` vs `u`
+(regimes 1+2, kink at `u=1`), **B** `Dhat T^(3/7)` vs `X` (regimes 2+3a, kink at
+`X=1`), **C** `Dhat T^(3/7)` vs `rho` (regimes 3a+3b, kink at `rho=1`).  A
+fourth, **D**, puts regime 3b on its single variable `rho/T = r_c/v_eff tau`.
+
+**Regime 3b** is not in the notes.  Fixing the `tau` exponent at `-3/7`, the
+preferred `r_c` exponent is also `3/7`, and the one-parameter fit gives
+
+    D = 0.82 v_0 xi_0 (r_c / v_0 tau)^(3/7)      p = 0.408 +- 0.017  vs  3/7 = 0.4286
+
+with a 5.4% residual over 16 raw cells spanning `rho = 2...16`, `T = 30...1000`.
+That is regime 3 with the tube width taken at coarse-graining scale `r_c`
+instead of `xi_0`: `w = xi (L/xi)^(-3/7)` becomes `xi (L/r_c)^(-3/7)`, because a
+walker kicked by `r_c` cannot resolve contour structure below `r_c`.  The two
+branches join smoothly at `rho = 1` (amplitudes 0.82 and 0.90).
+
+### Exponents in the landscape's own units
+
+`Dhat ~ T^a rho^b`, cells at least a factor `e^0.5` from every regime line:
+
+| regime | raw `a` | averaged `a` | predicted | raw `b` | averaged `b` | predicted |
+|---|---|---|---|---|---|---|
+| 1  | `-0.926 +- 0.016` | `-0.930 +- 0.013` | `-1` | `+1.847 +- 0.032` | `+1.875 +- 0.027` | `+2` |
+| 2  | `-0.207 +- 0.006` | `-0.170 +- 0.031` | `-3/13` | `+0.400 +- 0.016` | `+0.362 +- 0.063` | `+6/13` |
+| 3a | `-0.305 +- 0.015` | `-0.353 +- 0.068` | `-3/7` | `+0.242 +- 0.070` | `-0.023 +- 0.176` | `0` |
+| 3b | `-0.411 +- 0.017` | `-0.370 +- 0.030` | `-3/7` | `+0.376 +- 0.031` | `+0.412 +- 0.058` | `+3/7` |
+
+Regime 1 is exact once boundary cells are dropped: at margin `e^1.5` the raw fit
+is `T^(-0.983 +- 0.009) rho^(+1.999 +- 0.021)`.
+
+**The two models agree regime by regime**, which is the central result — the
+averaged case is the raw case with `(xi_0, v_0) -> (xi_eff, v_eff)`, nothing
+more.  On the collapses themselves:
+
+| branch | raw | averaged | predicted |
+|---|---|---|---|
+| A, regime 2 | `+0.217 +- 0.005` | `+0.223 +- 0.013` | `+0.231` |
+| B, regime 2 | `+0.469 +- 0.010` | `+0.476 +- 0.022` | `+0.462` |
+| B, regime 3a | `+0.251 +- 0.021` | `+0.268 +- 0.043` | `0` |
+| C, regime 3a | `+0.176 +- 0.071` | `+0.000 +- 0.126` | `0` |
+| D, regime 3b `p` | `+0.408 +- 0.017` | `+0.365 +- 0.029` | `+0.429` |
+| 3a amplitude | `0.904 +- 0.059` | `0.976 +- 0.060` | -- |
+
+The averaged data reaches `T ~ 10^3` at small `rho`, so it settles regime 3a's
+`r_c`-independence that the raw grid could only approach: `b = -0.023 +- 0.176`
+and a flat branch C, `+0.000 +- 0.126`.  The only real difference is regime 3b's
+amplitude, `C = 0.82` raw against `1.03` averaged -- a non-universal prefactor,
+expected because `S(k) J_0(k r_c)^2` is a different spectral shape from a
+Gaussian even at equal `xi_eff`.
+
+![the four collapses](figures/regimes_overlay.png)
+
+### The same regimes in lab units
+
+Substituting `v_eff ~ (2 pi)^(-1/4) 2^(-1/2) v_0 (xi_0/r_c)^(1/2)` and
+`xi_eff = sqrt(2) xi_0` (valid for `r_c >~ 2 xi_0`) turns the table above into
+laws for `D(r_c, tau)` that look nothing alike:
+
+| regime | raw | orbit-averaged |
+|---|---|---|
+| 1  | `D = r_c^2/4tau` | `D = r_c^2/4tau`  (landscape-free, identical) |
+| 2  | `D ~ tau^(-3/13) r_c^(+6/13)` | `D ~ tau^(-3/13) r_c^(+1/13)` |
+| 3a | `D ~ tau^(-3/7) r_c^0` | `D ~ tau^(-3/7) r_c^(-2/7)` |
+| 3b | `D ~ tau^(-3/7) r_c^(+3/7)` | `D ~ tau^(-3/7) r_c^(+1/7)` |
+
+and measured directly in lab units:
+
+| regime | raw | averaged |
+|---|---|---|
+| 1  | `tau^(-0.926+-0.016) r_c^(+1.847+-0.032)` | `tau^(-0.930+-0.013) r_c^(+1.838+-0.033)` |
+| 3a | `tau^(-0.305+-0.015) r_c^(+0.242+-0.070)` | `tau^(-0.352+-0.068) r_c^(-0.007+-0.158)` |
+| 3b | `tau^(-0.411+-0.017) r_c^(+0.376+-0.031)` | `tau^(-0.393+-0.020) r_c^(+0.180+-0.052)` |
+
+The last row is the headline: **averaging suppresses the raw model's spurious
+`r_c` growth in regime 3b from `r_c^(3/7) = r_c^0.429` to `r_c^(1/7) = r_c^0.143`**,
+measured `+0.376 +- 0.031` against `+0.180 +- 0.052` (a 3.3 sigma difference,
+each matching its own prediction).  Averaging very nearly restores the
+`r_c`-independence the notes predict, without ever being put in by hand.
+
+Two caveats on that table.  Averaged regime 3a lives at `r_c < xi_eff = 1.41
+xi_0`, where `v_eff` has not yet reached its `r_c^(-1/2)` asymptote, so its lab
+`r_c` exponent is `~0` (measured `-0.007 +- 0.158`) rather than `-2/7`; the two
+differ by only 1.8 sigma and the grid cannot separate them.  Averaged regime 2
+is likewise confined to `r_c <= xi_0`, so it has no clean lab power law either.
+
+### The boundaries move
+
+Each boundary is the same condition in landscape units, but `xi_eff(r_c)` and
+`v_eff(r_c)` bend the lines in lab units:
+
+| boundary | raw | orbit-averaged (large `r_c`) |
+|---|---|---|
+| 1 / 2 | `r_c = sqrt(v_0 xi_0 tau) ~ tau^(1/2)` | `r_c ~ tau^(2/5)` |
+| 2 / 3 | `r_c = xi_0 (xi_0/v_0 tau)^(3/7) ~ tau^(-3/7)` | `r_c ~ tau^(-6/11)` |
+| 3a / 3b | `r_c = xi_0` | `r_c = sqrt(2) xi_0` |
+
+so averaging pushes the triple point from `(tau, r_c) = (1, 1)` out to roughly
+`(5, 1.5)` and shrinks the drift-dominated wedge at large `r_c` -- a weaker
+landscape is beaten by the kicks sooner.
+
+![phase diagrams, both models](figures/phase_both.png)
+
 ## Modelling choices worth knowing about
 
 * **The hop.** As specified, a collision moves the guiding centre by exactly
