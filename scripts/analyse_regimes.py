@@ -138,7 +138,7 @@ def powerfit(x, y, sy):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--raw", nargs="+", default=sorted(glob.glob("data/grid*.npz")))
-    p.add_argument("--avg", nargs="+", default=sorted(glob.glob("data/avg_[A-Z].npz")))
+    p.add_argument("--avg", nargs="+", default=sorted(glob.glob("data/avg_[A-Z]*.npz")))
     p.add_argument("--margin", type=float, default=0.5)
     p.add_argument("--outdir", default="figures")
     args = p.parse_args()
