@@ -45,10 +45,15 @@ RAW_V, RAW_XI = 0.99374, 1.0063
 
 # predicted exponents (a, b) of Dh ~ T^a rho^b in each regime
 PRED = {"1": (-1.0, 2.0), "2": (-3 / 13, 6 / 13), "3a": (-3 / 7, 0.0),
-        "3b": (-3 / 7, None)}          # 3b's rho exponent is not predicted
+        "3b": (-3 / 7, 3 / 7)}
+# 3b is not in the notes.  Empirically Dh depends only on rho/T = r_c/(v tau),
+# i.e. it is regime 3 with the tube width taken at coarse-graining scale r_c
+# instead of xi:  w = xi (L/xi)^(-3/7)  ->  xi (L/r_c)^(-3/7).
 LABEL = {"1": "1  free walk", "2": "2  small kick, Levy contours",
          "3a": "3a  contour-limited, $r_c<\\xi$",
          "3b": "3b  contour-limited, $r_c>\\xi$"}
+# the fourth collapse: regime 3b alone, against its single variable
+WVAR = r"$w=\rho/T=r_c/v_{\rm eff}\tau$"
 
 
 def load(paths, ll_tol=0.15):
@@ -193,7 +198,7 @@ def main():
 
     guide = {"A": [("1", 1.0), ("2", 3 / 13)],
              "B": [("2", 6 / 13), ("3a", 0.0)],
-             "C": [("3a", 0.0), ("3b", None)]}
+             "C": [("3a", 0.0), ("3b", 3 / 7)]}
     axis = {"A": (r"$u=\rho^2/T$", r"$\hat D=D/v_{\rm eff}\xi_{\rm eff}$",
                   "A  regimes 1 + 2"),
             "B": (r"$X=\rho\,T^{3/7}$", r"$\hat D\,T^{3/7}$",
@@ -255,10 +260,35 @@ def main():
                     b, eb, _ = res[g]
                     pb = {"A": {"1": 1.0, "2": 3 / 13},
                           "B": {"2": 6 / 13, "3a": 0.0},
-                          "C": {"3a": 0.0, "3b": None}}[which].get(g)
+                          "C": {"3a": 0.0, "3b": 3 / 7}}[which].get(g)
                     ps = "--" if pb is None else f"{pb:+.3f}"
                     print(f"     {name:<16} regime {g:<3} slope "
                           f"{b:+.3f} +- {eb:.3f}   predicted {ps}")
+    print("\nregime 3b as a one-parameter law  Dh = C (r_c / v_eff tau)^p:")
+    for name, d, _, _ in sets:
+        lab = regime(d, args.margin)
+        m = lab == "3b"
+        if m.sum() < 4:
+            print(f"  {name:<16} only {int(m.sum())} cells")
+            continue
+        w = d["rho"][m] / d["T"][m]
+        pw, epw, amp = powerfit(w, d["Dh"][m], d["Eh"][m])
+        C = d["Dh"][m] / w ** (3 / 7)
+        print(f"  {name:<16} n={int(m.sum()):3d}   p = {pw:+.4f} +- {epw:.4f} "
+              f"(3/7 = {3/7:.4f})   C = {C.mean():.3f} "
+              f"(spread {100*C.std(ddof=1)/C.mean():.1f}%)")
+    print("regime 3a amplitude  Dh T^(3/7) = C:")
+    for name, d, _, _ in sets:
+        lab = regime(d, args.margin)
+        m = lab == "3a"
+        if m.sum() < 3:
+            print(f"  {name:<16} only {int(m.sum())} cells")
+            continue
+        C = d["Dh"][m] * d["T"][m] ** (3 / 7)
+        print(f"  {name:<16} n={int(m.sum()):3d}   C = {C.mean():.3f} +- "
+              f"{C.std(ddof=1)/np.sqrt(m.sum()):.3f}  "
+              f"(spread {100*C.std(ddof=1)/C.mean():.1f}%)")
+
     json.dump({f"{k[0]}|{k[1]}": (None if v is None else list(map(float, v)))
                for k, v in fits.items()},
               open(os.path.join("data", "regime_fits.json"), "w"), indent=1)
